@@ -9,8 +9,7 @@ import albumentations as A
 from typing import Dict,Union,Tuple,Literal
 from scipy.spatial.transform import Rotation
 from albumentations.pytorch import ToTensorV2
-
-import sousvide.control.policies.generate_networks as gn
+from sousvide.control.policy import Policy
 
 class Pilot():
     def __init__(self,cohort_name:str,pilot_name:str,
@@ -43,7 +42,7 @@ class Pilot():
             hy_flag:        Flag to check if history is initialized.
             hy_idx:         Index of history.
 
-            DxU:            Delta transforms.
+            tXU:            time/State/Input history.
             Znn:            Feature vectors.
 
             da_cfg:         Data augmentation configuration.
@@ -61,8 +60,8 @@ class Pilot():
                 ])            
         process_image = lambda x: transform(image=x)["image"]               # Image processing
         nhy = 20                                                            # Number of history states to keep
-        obj_dim = [18,1]                                                    # Objective dimensions
-        img_dim = [3,224,224]                                               # Image dimensions
+        obj_dim = [1,18]                                                    # Objective dimensions
+        img_dim = [1,3,224,224]                                               # Image dimensions
         
         # Some useful paths
         workspace_path  = os.path.dirname(
@@ -73,7 +72,7 @@ class Pilot():
             workspace_path,"cohorts",cohort_name,'roster',pilot_name)
         pilot_config_path = os.path.join(
             pilot_path,"config.json")
-        
+
         # Check if config file exists, if not create one
         if os.path.isfile(pilot_config_path):
             pass
@@ -111,20 +110,20 @@ class Pilot():
         # ---------------------------------------------------------------------
 
         self.device  = torch.device("cuda:0" if use_cuda else "cpu")
-        self.model,Nz = gn.policy_factory(pilot_path,profile,self.device)
-        # self.advisor = gn.advisor_factory(pilot_path,profile,self.device)
+        self.model = Policy(profile,self.device)
+        Nz = self.model.Nz
 
         # ---------------------------------------------------------------------
         # Pilot Observe Variables
         # ---------------------------------------------------------------------
 
         # Function Variables
-        self.txu_pr = torch.zeros(Ntx+Nu).to(self.device)                   # Previous State
-        self.znn_cr = torch.zeros(Nz).to(self.device)                       # Current Feature Vector
+        self.txu_pr = torch.zeros(1,Ntx+Nu).to(self.device)                   # Previous State
+        self.znn_cr = torch.zeros(1,Nz).to(self.device)                       # Current Feature Vector
         self.process_image = process_image                                  # Image Processing Function
 
         # Network Input Variables
-        self.tx_cr = torch.zeros(Ntx).to(self.device)                       # Current State
+        self.tx_cr = torch.zeros((1,Ntx)).to(self.device)                       # Current State
         self.Obj = torch.zeros(obj_dim).to(self.device)                     # Objective
         self.Img = torch.zeros(img_dim).to(self.device)                     # Image
 
@@ -136,8 +135,8 @@ class Pilot():
         self.hy_flag,self.hy_idx = False,0
 
         # Network Input Variables
-        self.DxU = torch.zeros((Ntx+Nu,nhy)).to(self.device)                # Delta Transforms
-        self.Znn = torch.zeros((Nz,nhy)).to(self.device)                    # Feature Vectors
+        self.tXU = torch.zeros((1,nhy,Ntx+Nu)).to(self.device)                # time/State/Input History
+        self.Znn = torch.zeros((1,nhy,Nz)).to(self.device)                    # Feature Vector History
         
         # ---------------------------------------------------------------------
         # Pilot Training Variables
@@ -195,11 +194,11 @@ class Pilot():
         """
 
         # Convert Non-Torch Tensor Variables to Torch Tensors on GPU
-        upr = torch.tensor(upr,dtype=torch.float32).to(self.device)
-        tcr = torch.tensor(tcr,dtype=torch.float32).to(self.device)
-        xcr = torch.from_numpy(xcr).float().to(self.device)
-        obj = torch.from_numpy(obj).float().to(self.device)
-        zcr = zcr.to(self.device) if zcr is not None else torch.zeros(0).to(self.device)
+        upr = torch.tensor(upr,dtype=torch.float32).to(self.device).unsqueeze(0)
+        tcr = torch.tensor(tcr,dtype=torch.float32).to(self.device).unsqueeze(0)
+        xcr = torch.from_numpy(xcr).float().to(self.device).unsqueeze(0)
+        obj = torch.from_numpy(obj).float().to(self.device).unsqueeze(0)
+        zcr = zcr.to(self.device) if zcr is not None else torch.zeros(1,0).to(self.device)
 
         # Process image if it is not downsampled
         if icr is None or icr.shape != self.Img.shape:
@@ -208,14 +207,14 @@ class Pilot():
             icr = torch.from_numpy(icr).float()
 
         # Update Function Variables
-        self.txu_pr.copy_(torch.cat((self.tx_cr,upr)).flatten())
-        self.tx_cr.copy_(torch.cat((tcr.unsqueeze(0),xcr)).flatten())
+        self.txu_pr.copy_(torch.cat((self.tx_cr,upr),dim=1))
+        self.tx_cr.copy_(torch.cat((tcr,xcr),dim=1))
         self.znn_cr.copy_(zcr)
 
         # Update Network Input Variables
-        self.Obj.copy_(obj.reshape(self.Obj.shape))
+        self.Obj.copy_(obj)
         self.Img.copy_(icr)
-            
+
     def orient(self):
         """
         Function that performs the orientation step of the OODA loop where we generate the history
@@ -232,46 +231,32 @@ class Pilot():
         if self.hy_flag == False:
             self.hy_flag = True                                                     # Skip transform calculation for first iteration since there is no previous state
         else:
-            q_cr = self.tx_cr[7:11].cpu().numpy()                                   # Current Quaternion
-            q_pr = self.txu_pr[7:11].cpu().numpy()                                  # Previous Quaternion
 
-            crRi = Rotation.from_quat(q_cr).as_matrix()                             # Current to Initial
-            prRi = Rotation.from_quat(q_pr).as_matrix()                             # Previous to Initial
-            dq:np.ndarray = Rotation.from_matrix(crRi.T@prRi).as_quat()             # Quaternion difference
-
-            # Update History Information
-            self.DxU[0,self.hy_idx] = self.tx_cr[0]-self.txu_pr[0]                  # Update History Time
-            self.DxU[1:4,self.hy_idx] = self.tx_cr[4:7]                             # Update History delta position
-            self.DxU[4:7,self.hy_idx] = self.tx_cr[4:7]-self.txu_pr[4:7]            # Update History delta velocity
-            
-            # TODO: Check if this is correct
-            self.DxU[7:11,self.hy_idx] = torch.from_numpy(dq.astype(np.float32))    # Update History delta quaternion
-            # self.DxU[7:11,self.hy_idx] = self.txu_pr[7:11]                          # Update History Quaternion
-            # ==========================================================================================================
-
-            self.DxU[11:15,self.hy_idx] = self.txu_pr[11:15]                        # Update History Input
-            self.Znn[:,self.hy_idx] = self.znn_cr                                   # Update History Odometry
+            self.tXU[0,self.hy_idx,:] = self.txu_pr                        # Update History Input
+            self.Znn[0,self.hy_idx,:] = self.znn_cr                                   # Update History Odometry
 
             # Increment History Index
             self.hy_idx += 1                                                        # Increment History index
-            if self.hy_idx >= self.DxU.shape[1]:                                    # If history blocks are full, reset index
+            if self.hy_idx >= self.tXU.shape[1]:                                    # If history blocks are full, reset index
                 self.hy_idx = 0
         
     def decide(self) -> Dict[str,torch.Tensor]:
         """
-        Function that performs the decision step of the OODA loop where we decide on the terms to put into the
-        neural network model. The input terms are extracted from the current state (with time), objective, image
-        and history data (delta transforms and feature vectors). The output is a dictionary of the input terms.
-
-        Args:
-            None
-
-        Returns:
-            xnn:    Input to the neural network model.
+        Build the inputs to the neural network model.
         """
-        xnn = self.model.extract_inputs(self.tx_cr,self.Obj,self.Img,self.DxU,self.Znn,self.hy_idx)
 
-        return xnn
+        khy,Nhy = self.hy_idx-1,self.tXU.shape[1]
+        idx_hy = (torch.arange(Nhy)+khy)%Nhy
+        
+        inputs = {
+            "rgb_image": self.Img,
+            "objective": self.Obj,
+            "current": self.tx_cr,
+            "history": self.tXU[:,idx_hy,:],
+            "feature": self.Znn[:,idx_hy,:]
+        }
+        
+        return inputs
     
     def act(self,xnn: Dict[str,torch.Tensor]) -> Tuple[np.ndarray,torch.Tensor,Union[np.ndarray,None]]:
 
@@ -287,18 +272,14 @@ class Pilot():
             znn:    Output from the image processing network module.
             adv:    Oracle output
         """
+
         with torch.no_grad():
-            inputs = self.model.get_commander_inputs(xnn)
-            unn,znn = self.model(*inputs)
+            unn,xnn = self.model(xnn)
 
         # Convert inputs to numpy array
         unn = unn.cpu().numpy().squeeze()
-        # znn = znn.cpu().numpy().squeeze()
-        
-        # Advisor Output (empty for now)
-        adv = None
 
-        return unn,znn,adv
+        return unn,xnn
 
     def OODA(self,
              upr:np.ndarray,
@@ -341,17 +322,17 @@ class Pilot():
         t2 = time.time()
         xnn = self.decide()
         t3 = time.time()
-        unn,znn,adv = self.act(xnn)
+        ynn,xnn = self.act(xnn)
         t4 = time.time()
 
         # Get the total time taken
         tsol = np.array([t1-t0,t2-t1,t3-t2,t4-t3])
 
-        return unn,znn,adv,xnn,tsol
+        return ynn,xnn,tsol
     
     def control(self,
-                tcr:float,xcr:np.ndarray,
                 upr:np.ndarray,
+                tcr:float,xcr:np.ndarray,
                 obj:np.ndarray,
                 icr:Union[npt.NDArray[np.uint8],None],zcr:Union[torch.Tensor,None]) -> Tuple[
                     np.ndarray,
@@ -375,6 +356,6 @@ class Pilot():
             adv:    Oracle output
             tsol:   Time taken to solve components of the OODA loop in list form.
         """
-        unn,znn,adv,_,tsol = self.OODA(upr,tcr,xcr,obj,icr,zcr)
+        unn,_,tsol = self.OODA(upr,tcr,xcr,obj,icr,zcr)
         
-        return unn,znn,adv,tsol
+        return unn,tsol

@@ -1,0 +1,52 @@
+{
+    "type": "Vitamin",
+    "networks": {
+        "histNet": {
+            "network_type": "sift",
+            "history_inputs": [
+                "dt",
+                "px","py","pz","vx","vy","vz","qx","qy","qz","qw",
+                "nf","wx","wy","wz"
+            ],
+            "history_frames": [0, 1, 2, 3, 4],
+            "d_model": 16,
+            "num_heads": 4,
+            "d_ff": 64,
+            "num_layers": 3,
+            "output_size": 2
+        },
+        "featNet": {
+            "network_type": "sqnfe",
+            "current_inputs": [
+                "pz","qx","qy","qz","qw"
+            ],
+            "current_layer": 2,
+            "hidden_sizes": [512, 128, 32],
+            "output_size": 16
+        },
+        "commNet": {
+            "network_type": "svcn",
+            "input_size": 47,
+            "hidden_sizes": [64, 32],
+            "output_size": 4
+        }
+    },
+    "connections": {
+        "histNet": ["history"],
+        "featNet": ["rgb_image", "current"],
+        "commNet": ["objective", "current","featNet", "histNet"]
+    },
+    "data_augmentation": {
+        "type": "additive",
+        "mean": [
+            0.000,  0.000,  0.000,
+            0.000,  0.000,  0.000,
+            0.000,  0.000,  0.000,  0.000
+        ],
+        "std": [
+            0.000,  0.000,  0.000,
+            0.000,  0.000,  0.000,
+            0.000,  0.000,  0.000,  0.000
+        ]
+    }
+}
