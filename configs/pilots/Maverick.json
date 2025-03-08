@@ -15,7 +15,6 @@
                     ]
                 ]
             },
-            "input_size": 65,
             "hidden_sizes": [64, 32],
             "output_size": 2,
             "feature_index": 1
@@ -36,7 +35,6 @@
                 ]
             },
             "augment_layer": 2,
-            "input_size": [3,224,224],
             "hidden_sizes": [512, 128, 32],
             "output_size": 16
         },

@@ -15,7 +15,6 @@
                     ]
                 ]
             },
-            "input_size": [5,13],
             "shr_hidden_sizes": [16, 8],
             "shr_output_size": 4,
             "mrg_hidden_sizes": [16, 8],
@@ -38,7 +37,6 @@
                 ]
             },
             "augment_layer": 2,
-            "input_size": [3,224,224],
             "hidden_sizes": [512, 128, 32],
             "output_size": 16
         },

@@ -8,7 +8,6 @@ from sousvide.control.networks.base_net import BaseNet
 class SIFU(BaseNet):
     def __init__(self,
                  inputs: Dict[str,Dict[str,List[Union[str,int]]]],
-                 input_size:int,
                  hidden_sizes:List[int],
                  output_size:int,
                  feature_index:int,
@@ -19,7 +18,6 @@ class SIFU(BaseNet):
 
         Args:
             inputs:         Inputs config.
-            input_size:     Input size.
             hidden_sizes:   Hidden sizes.
             output_size:    Output size.
             feature_index:  Index of the feature to be extracted.
@@ -42,11 +40,10 @@ class SIFU(BaseNet):
         
         # Check the arguments are valid
         assert feature_index < len(hidden_sizes), "Feature index out of range."
-        assert input_size == nh.get_input_size(inputs["history"]), "Input size mismatch."
         
         # Populate the layers
         layers = []
-        prev_size = input_size
+        prev_size = nh.get_input_size(inputs["history"])
 
         for idx,size in enumerate(hidden_sizes):
             layers.append(nn.Linear(prev_size, size))

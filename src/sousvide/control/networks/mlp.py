@@ -5,8 +5,11 @@ from sousvide.control.networks.base_net import BaseNet
 
 class MLP(BaseNet):
     def __init__(self,
-                 input_size:int, hidden_sizes:List[int], output_size:int,
-                 dropout=0.1,network_type="mlp"):
+                 input_size:int,
+                 hidden_sizes:List[int],
+                 output_size:int,
+                 dropout=0.1,
+                 network_type="mlp"):
         """
         Initialize a simple MLP model.
 
@@ -15,11 +18,14 @@ class MLP(BaseNet):
             hidden_sizes:   List of hidden layer sizes.
             output_size:    Output size.
             dropout:        Dropout rate.
+            network_type:   Type of network.
 
         Variables:
             network_type:   Type of network.
+            input_indices:  Indices of the inputs.
             networks:       List of neural networks.
         """
+
         # Initialize the parent class
         super(MLP, self).__init__()
 
@@ -49,7 +55,7 @@ class MLP(BaseNet):
             ynn:  Output tensor.
         """
 
-        # Simple MLP
+        # Forward pass
         ynn = self.networks(xnn)         
 
         return ynn

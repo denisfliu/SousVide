@@ -10,9 +10,9 @@ class BaseNet(nn.Module, ABC):
         super().__init__()
 
         # Define required attributes that all subclasses must implement
-        self.network_type = None
-        self.input_indices = None
-        self.networks = None
+        self.network_type = "basenet"
+        self.input_indices = {}
+        self.networks =  nn.ModuleDict()
 
     @abstractmethod
     def forward(self, x):

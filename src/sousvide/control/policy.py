@@ -21,7 +21,7 @@ class Policy(nn.Module):
         self.policy_inputs = ["rgb_image","objective","current","history","feature"]
 
         # Network Components
-        self.networks = nn.ModuleDict()
+        self.networks:Dict[str,BaseNet] = nn.ModuleDict()
         for key in config["networks"].keys():
             self.networks[key] = nf.generate_network(config["networks"][key])   
             

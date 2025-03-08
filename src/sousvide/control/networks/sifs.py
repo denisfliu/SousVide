@@ -7,7 +7,6 @@ from typing import List,Dict,Union
 class SIFS(nn.Module):
     def __init__(self,
                  inputs:Dict[str,Dict[str,List[Union[str,int]]]],
-                 input_size:List[int],
                  shr_hidden_sizes:List[int],shr_output_size:int,mrg_hidden_sizes:List[int],
                  output_size:int,
                  feature_index:int,
@@ -18,7 +17,6 @@ class SIFS(nn.Module):
 
         Args:
             inputs:             Inputs config.
-            input_size:         Total input size.
             shr_hidden_sizes:   Hidden sizes of the shared network.
             shr_output_size:    Output size of the shared network.
             mrg_hidden_sizes:   Hidden sizes of the merged network.
@@ -29,10 +27,10 @@ class SIFS(nn.Module):
 
         Variables:
             network_type:       Type of network.
+            input_indices:      Indices of the inputs.
+            networks:           Network
             use_subnet:         Flag to use the subnet.
             subnet_idx:         Index of the subnet.
-            shared_network:     Shared network.
-            merged_network:     Merged network
 
         """
 
@@ -44,7 +42,6 @@ class SIFS(nn.Module):
 
         # Check the arguments are valid
         assert feature_index < len(mrg_hidden_sizes), "Feature index out of range."
-        assert input_size[0]*input_size[1] == nh.get_input_size(inputs["history"]), "Input size mismatch."
         
         # Populate the shared layers
         shared_layers = []
@@ -96,7 +93,7 @@ class SIFS(nn.Module):
             xnn_hist:   History input.
 
         Returns:
-            ymn:        Output tensor.
+            ynn:        Output tensor.
         """
 
         # Forward pass on the shared network
@@ -107,8 +104,8 @@ class SIFS(nn.Module):
 
         # Forward pass on the merged network
         if self.use_subnet == True:
-            ymn = self.networks["merged"][:self.subnet_idx](xmn)
+            ynn = self.networks["merged"][:self.subnet_idx](xmn)
         else:
-            ymn = self.networks["merged"](xmn)
+            ynn = self.networks["merged"](xmn)
 
-        return ymn
+        return ynn

@@ -13,10 +13,10 @@ class SqFE(BaseNet):
     def __init__(self,
                  inputs: Dict[str,Dict[str,List[Union[str,int]]]],
                  augment_layer:int,
-                 input_size:List[int],hidden_sizes:List[int], output_size:int,
+                 hidden_sizes:List[int],
+                 output_size:int,
                  dropout=0.1,
                  Nsqn:int=1000,
-                 SqNet_dim: List[int]=[3,224,224],
                  network_type="sqfe"):
         """
         SqueezeNet Feature Extractor.
@@ -45,7 +45,6 @@ class SqFE(BaseNet):
 
         # Check the arguments are valid
         assert augment_layer < len(hidden_sizes), "Augment layer out of range."
-        assert input_size == SqNet_dim, "Input size mismatch."
 
         # Some useful intermediate variables
         networks = nn.ModuleDict({
@@ -77,10 +76,10 @@ class SqFE(BaseNet):
         """
 
         # Image CNN
-        xim = self.networks["cnn"](xnn_rgb)
+        ycnn = self.networks["cnn"](xnn_rgb)
 
         # Feature Extractor MLPs
-        yfe0 = self.networks["mlp0"](xim)
-        yfe1 = self.networks["mlp1"](torch.cat((yfe0,xnn_curr),-1))
+        yfe0 = self.networks["mlp0"](ycnn)
+        ynn = self.networks["mlp1"](torch.cat((yfe0,xnn_curr),-1))
 
-        return yfe1
+        return ynn
