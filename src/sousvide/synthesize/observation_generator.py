@@ -119,7 +119,7 @@ def generate_observations(pilot:Pilot,
             img_cr = Imgs[k,:,:,:]
 
             # Generate the sfti data
-            _,znn_cr,_,xnn,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
+            _,znn_cr,nn_io,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
             ynn = {"unn":ucr,"mfn":np.array([frame["mass"],frame["force_normalized"]]),"onn":xcr}
 
             # Store the data

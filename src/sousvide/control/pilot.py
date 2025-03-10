@@ -72,6 +72,10 @@ class Pilot():
         # Load pilot config
         with open(pilot_config_path) as json_file:
             profile = json.load(json_file)
+        
+        # Check if pilot folder exists, if not create one
+        if not os.path.exists(pilot_path):
+            os.makedirs(pilot_path)
 
         # Torch intermediate variables
         use_cuda = torch.cuda.is_available()                                    # Check if cuda is available
