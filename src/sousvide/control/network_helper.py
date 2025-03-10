@@ -5,6 +5,26 @@ import math
 
 from typing import List,Union,Dict,Tuple,Any
 
+def get_max_length(inputs: Dict[str,Dict[str,List[Union[str,int]]]]) -> int:
+    """
+    Get the maximum sequence length of the inputs.
+
+    Args:
+        inputs:         Dictionary of inputs.
+
+    Returns:
+        max_sequence:   Maximum sequence length.
+    """
+
+    max_frame = 0
+    for input_key,input_value in inputs.items():
+        if input_key == "history" or input_key == "feature":
+            max_frame = max(max_frame,*input_value[0])
+
+    max_length = max_frame + 1
+
+    return max_length
+
 def get_input_size(input_indices:List[List[torch.Tensor]]) -> List[int]:
     """
     Get the size of the input tensor.

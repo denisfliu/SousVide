@@ -1,0 +1,57 @@
+{
+    "type": "HPNet_v1",
+    "networks": {
+        "histNet": {
+            "network_type": "sifu",
+            "inputs": {
+                "history": [
+                    [0, 1, 2, 3, 4],
+                    [
+                        "dt",
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
+                    ]
+                ]
+            },
+            "hidden_sizes": [64, 32],
+            "output_size": 2,
+            "feature_index": 1
+        },
+        "commNet": {
+            "network_type": "hpcn",
+            "inputs": {
+                "objective": [
+                    ["all"]
+                ],
+                "current": [
+                    [
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "histNet": [
+                    ["all"]
+                ]
+            },
+            "input_size": 60,
+            "hidden_sizes": [64, 32],
+            "output_size": 4
+        }
+    },
+    "data_augmentation": {
+        "type": "additive",
+        "mean": [
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
+        ],
+        "std": [
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
+        ]
+    }
+}

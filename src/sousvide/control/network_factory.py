@@ -5,6 +5,7 @@ from sousvide.control.networks.sifu import SIFU
 from sousvide.control.networks.sifs import SIFS
 from sousvide.control.networks.sift import SIFT
 from sousvide.control.networks.sqfe import SqFE
+from sousvide.control.networks.hpcn import HPCN
 from sousvide.control.networks.svcn import SVCN
 
 def generate_network(config:Dict[str,Any]) -> BaseNet:
@@ -23,6 +24,8 @@ def generate_network(config:Dict[str,Any]) -> BaseNet:
         network = SqFE(**config)
     elif network_type == "svcn":
         network = SVCN(**config)
+    elif network_type == "hpcn":
+        network = HPCN(**config)
     elif network_type == None:
         network = None
     else:

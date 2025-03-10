@@ -1,6 +1,6 @@
-import torch.nn as nn
 from abc import ABC, abstractmethod
-from typing import Dict,Tuple,Any,List
+import torch
+import torch.nn as nn
 
 class BaseNet(nn.Module, ABC):
     """
@@ -15,8 +15,8 @@ class BaseNet(nn.Module, ABC):
         self.networks =  nn.ModuleDict()
 
     @abstractmethod
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         """
         Subclasses must implement a forward pass.
         """
-        pass
+        return None
