@@ -64,25 +64,12 @@ class Pilot():
         # Some useful paths
         workspace_path  = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        default_config_path = os.path.join(
+        pilot_config_path = os.path.join(
             workspace_path,"configs","pilots",pilot_name+".json")
         pilot_path = os.path.join(
             workspace_path,"cohorts",cohort_name,'roster',pilot_name)
-        pilot_config_path = os.path.join(
-            pilot_path,"config.json")
 
-        # Check if config file exists, if not create one
-        if os.path.isfile(pilot_config_path):
-            pass
-        else:
-            os.makedirs(pilot_path,exist_ok=True)
-            with open(default_config_path) as json_file:
-                profile = json.load(json_file)
-
-            with open(pilot_config_path, 'w') as outfile:
-                json.dump(profile, outfile, indent=4)
-
-        # Load config file
+        # Load pilot config
         with open(pilot_config_path) as json_file:
             profile = json.load(json_file)
 
@@ -267,16 +254,16 @@ class Pilot():
         Returns:
             unn:    Output from the neural network model.
             znn:    Feature vector output from the feature extractor.
-            xnn:    Inputs to the neural network model.
+            nn_io:  Inputs/Outputs to the neural networks.
         """
 
         with torch.no_grad():
-            unn,znn,xnn = self.model(xnn)
+            unn,znn,nn_io = self.model(xnn)
 
         # Convert inputs to numpy array
         unn = unn.cpu().numpy().squeeze()
 
-        return unn,znn,xnn
+        return unn,znn,nn_io
 
     def OODA(self,
              upr:np.ndarray,
@@ -315,13 +302,13 @@ class Pilot():
         t2 = time.time()
         xnn = self.decide()
         t3 = time.time()
-        ynn,znn,xnn = self.act(xnn)
+        ynn,znn,nn_io = self.act(xnn)
         t4 = time.time()
 
         # Get the total time taken
         tsol = np.array([t1-t0,t2-t1,t3-t2,t4-t3])
 
-        return ynn,znn,xnn,tsol
+        return ynn,znn,nn_io,tsol
     
     def control(self,
                 upr:np.ndarray,

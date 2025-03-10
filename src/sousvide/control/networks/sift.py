@@ -2,11 +2,12 @@ import torch
 import sousvide.control.network_helper as nh
 
 from torch import nn
-from typing import List
+from typing import List,Dict,Union
+from sousvide.control.networks.base_net import BaseNet
 
-class SIFT(nn.Module):
+class SIFT(BaseNet):
     def __init__(self,
-                 history_inputs:List[str],history_frames:int,
+                 inputs: Dict[str,Dict[str,List[Union[str,int]]]],
                  d_model:int, num_heads:int, d_ff:int, num_layers:int,
                  output_size:int,
                  dropout=0.1,
@@ -15,8 +16,7 @@ class SIFT(nn.Module):
         Initialize a Sequence Into Features (Transformer) model.
         
         Args:
-            history_inputs: List of inputs.
-            history_frames: Number of frames.
+            inputs:         Inputs config.
             num_heads:      Number of heads.
             d_ff:           Dimension of the feedforward layer.
             num_layers:     Number of layers.
@@ -35,22 +35,29 @@ class SIFT(nn.Module):
         # Initialize the parent class
         super(SIFT, self).__init__()
 
+        # Extract the inputs
+        input_indices = nh.get_input_indices(inputs)
+
         # Populate the layers
-        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=num_heads, dim_feedforward=d_ff, dropout=dropout, activation='gelu')
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=d_ff,
+            dropout=dropout,
+            activation='gelu')
         
-        # Define the model
-        self.network_type = network_type
-        self.inputs = {}
-
-        self.position = self._generate_positional_encoding(d_model, len(history_frames))
-        self.input_idx = nh.get_indices(history_inputs,history_frames)
-
-        self.networks = nn.ModuleDict({
-            "fc_in": nn.Linear(len(history_inputs), d_model),
+        networks = nn.ModuleDict({
+            "fc_in": nn.Linear(len(inputs["history"][-1]), d_model),
             "encoder": nn.TransformerEncoder(encoder_layer, num_layers=num_layers),
             "fc_out": nn.Linear(d_model, output_size)
         })
-        
+
+        # Define the model
+        self.network_type = network_type
+        self.input_indices = input_indices
+        self.networks = networks
+        self.position = self._generate_positional_encoding(d_model, len(inputs["history"][0]))
+
     def _generate_positional_encoding(self, d_model, max_seq_len):
         """
         Generate positional encoding.
@@ -73,27 +80,24 @@ class SIFT(nn.Module):
 
         return pe.unsqueeze(0)  # Shape: (1, max_seq_len, d_model)
     
-    def forward(self, history:torch.Tensor) -> torch.Tensor:
+    def forward(self, xnn_hist:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            history:  Input tensor.
+            xnn_hist:   History input.
 
         Returns:
-            ynn:  Output tensor.
+            ynn:        Output tensor.
         """
 
-        # Extract the inputs
-        xnn = nh.extract_array_inputs(history,self.input_idx)
-
-        # Transform input tensor into embedding
-        znn = self.networks["fc_in"](xnn) + self.position[:, :xnn.size(1), :].to(xnn.device)
+        # Forward pass through embedding layer
+        zem = self.networks["fc_in"](xnn_hist) + self.position[:, :xnn_hist.size(1), :].to(xnn_hist.device)
         
         # Pass through the transformer
-        znn = self.networks["encoder"](znn)
+        ztf = self.networks["encoder"](zem)
 
         # Transform embedding into output tensor
-        ynn = self.networks["fc_out"](znn[:,-1,:])
+        ynn = self.networks["fc_out"](ztf[:,-1,:])
         
         return ynn

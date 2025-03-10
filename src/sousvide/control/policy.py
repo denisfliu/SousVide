@@ -42,18 +42,26 @@ class Policy(nn.Module):
         Returns:
             ynn:        Policy output.
             znn:        Feature output.
-            xnn_pol:    (Updated) policy variables
+            nn_io:      Network inputs/outputs.
         """
+
+        nn_io = {}
 
         # Forward Pass
         for name,network in self.networks.items():
             # Extract Inputs
-            xnn_net = []
+            xnn = []
             for key,value in network.input_indices.items():
-                xnn_net.append(nh.extract_inputs(xnn_pol[key],value))
+                xnn.append(nh.extract_inputs(xnn_pol[key],value))
 
             # Forward Pass
-            ynn = network(*xnn_net)
+            ynn = network(*xnn)
+
+            # Store the inference inputs/outputs
+            nn_io[name] = {
+                "inputs" : xnn,
+                "outputs": ynn
+            }
 
             # Policy input update
             if name not in self.base_policy_inputs:
@@ -65,4 +73,4 @@ class Policy(nn.Module):
         else:
             znn = None
 
-        return ynn,znn,xnn_pol
+        return ynn,znn,nn_io
