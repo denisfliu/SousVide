@@ -1,0 +1,27 @@
+{
+    "rgb_image": [
+        [null],
+        [null],
+        ["r", "g", "b"]
+    ],
+    "history": [
+        [null],
+        [
+            "dt",
+            "px","py","pz",
+            "vx","vy","vz",
+            "qx","qy","qz","qw",
+            "nf","wx","wy","wz"
+        ]
+    ],
+    "features": [
+        [null],
+        [null]
+    ],
+    "forces": [
+        [null],
+        [
+            "fx","fy","fz"
+        ]
+    ]
+}

@@ -6,7 +6,7 @@ import json
 import numpy.typing as npt
 import albumentations as A
 
-from typing import Dict,Union,Tuple,Literal
+from typing import Dict,Union,Tuple,Literal,List
 from albumentations.pytorch import ToTensorV2
 from sousvide.control.policy import Policy
 
@@ -188,7 +188,7 @@ class Pilot():
         xcr = torch.from_numpy(xcr).float().to(self.device).unsqueeze(0)
         obj = torch.from_numpy(obj).float().to(self.device).unsqueeze(0)
         zcr = zcr.to(self.device).unsqueeze(0) if zcr is not None else torch.zeros(1,self.Znn.shape[-1]).to(self.device)
-        
+
         # Process image if it is not downsampled
         if icr is None or icr.shape != self.Img.shape:
             icr = self.process_image(icr)
@@ -246,7 +246,11 @@ class Pilot():
         
         return inputs
     
-    def act(self,xnn: Dict[str,torch.Tensor]) -> Tuple[np.ndarray,torch.Tensor,Union[np.ndarray,None]]:
+    def act(self,
+            xnn: Dict[str,torch.Tensor]) -> Tuple[
+                np.ndarray,
+                torch.Tensor,
+                Dict[str, Dict[str,Union[torch.Tensor, List[torch.Tensor]]]]]:
 
         """
         Function that performs a forward pass of the neural network model and extracts
@@ -258,26 +262,31 @@ class Pilot():
         Returns:
             unn:    Output from the neural network model.
             znn:    Feature vector output from the feature extractor.
-            nn_io:  Inputs/Outputs to the neural networks.
+            io_nn:  Inputs/Outputs to the neural networks.
         """
 
         with torch.no_grad():
-            unn,znn,nn_io = self.model(xnn)
+            unn,znn,io_nn = self.model(xnn)
+        
+        # Post-process the outputs
+        unn = unn.cpu().numpy().squeeze()       # Convert command to numpy array
+        
+        if znn is not None:
+            znn = znn.squeeze()                     # Flatten the feature vector
 
-        # Convert inputs to numpy array
-        unn = unn.cpu().numpy().squeeze()
-
-        return unn,znn,nn_io
+        return unn,znn,io_nn
 
     def OODA(self,
-             upr:np.ndarray,
-             tcr:float,xcr:np.ndarray,
-             obj:np.ndarray,
-             icr:Union[npt.NDArray[np.uint8],None],zcr:Union[torch.Tensor,None]) -> Tuple[
+             upr: np.ndarray,
+             tcr: float,
+             xcr: np.ndarray,
+             obj: np.ndarray,
+             icr: Union[npt.NDArray[np.uint8], None],
+             zcr: Union[torch.Tensor, None]) -> Tuple[
                  np.ndarray,
-                 Dict[str,torch.Tensor],
+                 torch.Tensor,
+                 Dict[str, Dict[str,Union[torch.Tensor, List[torch.Tensor]]]],
                  np.ndarray]:
-        
         """
         Function that runs the OODA loop. This is the main function that is called by the
         pilot during flight.
@@ -292,7 +301,8 @@ class Pilot():
 
         Returns:
             unn:    Output from the neural network model.
-            xnn:    Inputs to the neural network model.
+            znn:    Feature vector output from the feature extractor.
+            io_nn:  Inputs/Outputs to the neural networks.
             tsol:   Time taken to solve components of the OODA loop in list form.
         """
         
@@ -306,13 +316,13 @@ class Pilot():
         t2 = time.time()
         xnn = self.decide()
         t3 = time.time()
-        ynn,znn,nn_io = self.act(xnn)
+        unn,znn,io_nn = self.act(xnn)
         t4 = time.time()
 
         # Get the total time taken
         tsol = np.array([t1-t0,t2-t1,t3-t2,t4-t3])
 
-        return ynn,znn,nn_io,tsol
+        return unn,znn,io_nn,tsol
     
     def control(self,
                 upr:np.ndarray,
@@ -321,7 +331,6 @@ class Pilot():
                 icr:Union[npt.NDArray[np.uint8],None],zcr:Union[torch.Tensor,None]) -> Tuple[
                     np.ndarray,
                     torch.Tensor,
-                    Union[np.ndarray,None],
                     np.ndarray]:
         """
         Name mask for the OODA control loop. Variable position swap to match generic controllers.

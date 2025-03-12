@@ -3,14 +3,14 @@ import json
 import torch
 import math
 
-from typing import List,Union,Dict,Tuple,Any
+from typing import List,Union,Dict
 
 def get_max_length(inputs: Dict[str,Dict[str,List[Union[str,int]]]]) -> int:
     """
-    Get the maximum sequence length of the inputs.
+    Get the maximum sequence length of the inputs/outputs.
 
     Args:
-        inputs:         Dictionary of inputs.
+        inputs:         Dictionary of inputs/outputs.
 
     Returns:
         max_sequence:   Maximum sequence length.
@@ -25,87 +25,125 @@ def get_max_length(inputs: Dict[str,Dict[str,List[Union[str,int]]]]) -> int:
 
     return max_length
 
-def get_input_size(input_indices:List[List[torch.Tensor]]) -> List[int]:
+def get_io_dict() -> Dict[str, List[List[str]]]:
     """
-    Get the size of the input tensor.
-
-    Args:
-        input_indices:  Indices of the input.
+    Get the input/output dictionary.
 
     Returns:
-        input_size:     Size of the input tensor.
-    """
-
-    input_size = math.prod(len(sublist) for sublist in input_indices)
-
-    return input_size
-
-def get_input_indices(inputs: Dict[str,Dict[str,List[Union[str,int]]]]) -> Dict[str,List[Union[slice,torch.Tensor]]] :
-    """
-    Extract the indices of the inputs. Inputs are defined to be one of the following:
-        - rgb_image:    (Batch, Channels, Height, Width)
-        - objective:    (Batch, Channels)
-        - current:      (Batch, Channels)
-        - history:      (Batch, Sequence, Channels)
-        - feature:      (Batch, Sequence, Channels)
-        - histNet:      (Batch, Channels)
-        - featNet:      (Batch, Channels)
-    The config jsons for input omit the batch dimension and use null to indicate elements
-    that are numbered sequences (height, width, sequence). In the config jsons for pilots
-    that call on these inputs, we use the string "all" to indicate all elements.
-
-    Args:
-        inputs:         Dictionary of inputs.
-
-    Returns:
-        indices:        Dictionary of input indices.
+        io_dict:    Input/output dictionary.
     """
 
     # Some useful paths
     workspace_path  = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     basic_config_path = os.path.join(
-        workspace_path,"configs","inputs","basic.json")
-    advd_config_path = os.path.join(
-            workspace_path,"configs","inputs","advanced.json")
+        workspace_path,"configs","nnio","basic.json")
+    seq_config_path = os.path.join(
+        workspace_path,"configs","nnio","sequence.json")
 
     # Load the basic and advanced configurations
     with open(basic_config_path) as f:
         basic_config = json.load(f)
-    with open(advd_config_path) as f:
-        advd_config = json.load(f)
+    with open(seq_config_path) as f:
+        seq_config = json.load(f)
 
-    inputs_dict = {**basic_config,**advd_config}
+    io_dict = {**basic_config,**seq_config}
 
+    return io_dict
+
+def get_io_size(idxs_dict:Dict[str,List[Union[slice,torch.Tensor]]]) -> int:
+    """
+    Get the size of the input/output.
+
+    Args:
+        idxs_dict:  Dictionary of indices of the input/output.
+
+    Returns:
+        io_size:    Size of the input/output tensor.
+    """
+
+    io_size = 0
+    for idxs_list in idxs_dict.values():
+        io_size += math.prod(len(sublist) for sublist in idxs_list)
+
+    return io_size
+
+def get_io_dims(idx_list:List[Union[slice,torch.Tensor]]) -> int:
+    """
+    Get the dimensions of the input/output.
+
+    Args:
+        idxs:       Indices of the input/output.
+
+    Returns:
+        io_dims:    Dimensions of the input/output tensor.
+    """
+
+    io_dims = [len(sublist) for sublist in idx_list]
+
+    return io_dims
+
+def get_io_indices(ios: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,List[Union[slice,torch.Tensor]]] :
+    """
+    Extract the indices of the inputs/outputs. Inputs/outputs are defined to be one of the following:
+        
+    Basic
+        - objective:    (Batch, Channels)
+        - current:      (Batch, Channels)
+        - command:      (Batch, Channels)
+        - parameters:   (Batch, Channels)
+        - histLat:      (Batch, Channels)
+        - featLat:      (Batch, Channels)
+    Sequence
+        - rgb_image:    (Batch, Height, Width, Channels)
+        - history:      (Batch, Window, Channels)
+        - feature:      (Batch, Window, Channels)
+        - forces:       (Batch, Window, Channels)
+
+    The config jsons for input/output omit the batch dimension and use null to indicate elements that
+    are numbered sequences (height, width, window). In the config jsons for pilots that call on these
+    inputs/outputs, we use <int>/["all"] to refer to the total input/output size and List[int] to refer
+    to specific indices of the input/output.
+
+    Args:
+        ios:        Dictionary of inputs/outputs.
+
+    Returns:
+        idxs:       Dictionary of input/output indices.
+    """
+
+    # Get the input/output dictionary
+    io_dict = get_io_dict()
+    
     # Extract the indices
-    indices:Dict[str,List[Union[slice,torch.Tensor]]] = {}
-    for input,components in inputs.items():
-        indices[input] = []
-        input_list:list = inputs_dict[input][-1]
+    idxs:Dict[str,List[Union[slice,torch.Tensor]]] = {}
+    for io,components in ios.items():
+        idxs[io] = []
+        io_key = io_dict[io][-1]
         sequences,channels = components[:-1],components[-1]
 
         for sequence in sequences:
             if sequence == ["all"]:
-                indices[input].append(slice(None))
+                idxs[io].append(slice(None))
             else:
-                indices[input].append(torch.tensor(sequence))
+                idxs[io].append(torch.tensor(sequence))
 
         if channels == ["all"]:
-            indices[input].append(slice(None))
+            idxs[io].append(slice(None))
         else:
-            channel_indices = [input_list.index(channel) for channel in channels]
-            indices[input].append(torch.tensor(channel_indices))
+            channel_indices = [io_key.index(channel) for channel in channels]
+            idxs[io].append(torch.tensor(channel_indices))
 
-        # Catch the case where the input is an rgb_image since convention
+        # Catch the case where the io is an rgb_image since convention
         # is actually (C,H,W) and not (H,W,C)
-        if input == "rgb_image":
-            indices[input] = indices[input][::-1]
+        if io == "rgb_image":
+            idxs[io] = idxs[io][::-1]
 
-    return indices
+    return idxs
 
-def extract_inputs(input:torch.Tensor, input_indices:List[Union[slice,torch.Tensor]]) -> Dict[str,torch.Tensor]:
+def extract_io(io:torch.Tensor, io_idxs:List[Union[slice,torch.Tensor]]) -> Dict[str,torch.Tensor]:
     """
-    Extract the inputs from the input tensor. The first dimension of the input tensor is
+    Extract the inputs/outputs from the input/output tensor. The first dimension of the tensor is
     assumed to be the batch dimension and hence is left untouched.
 
     Args:
@@ -117,17 +155,18 @@ def extract_inputs(input:torch.Tensor, input_indices:List[Union[slice,torch.Tens
 
     """
 
-    for dim, idx in enumerate(input_indices):
+    for dim, idx in enumerate(io_idxs):
         if isinstance(idx, slice):
-            indices = torch.arange(*idx.indices(input.shape[dim+1]))  # Convert slice to index list
+            idxs = torch.arange(*idx.indices(io.shape[dim+1]))  # Convert slice to index list
         elif isinstance(idx,torch.Tensor):
-            indices = idx
+            idxs = idx
         else:
             raise ValueError(f"Invalid type in index_list[{dim}]: {type(idx)}. Must be slice or list.")
-        # Move indices to the same device as the input tensor
-        indices = indices.to(input.device)
+        
+        # Move indices to the same device as the input/output tensor
+        idxs = idxs.to(io.device)
  
         # Apply index selection along the current dimension
-        input = torch.index_select(input, dim+1, indices)
+        io = torch.index_select(io, dim+1, idxs)
 
-    return input
+    return io

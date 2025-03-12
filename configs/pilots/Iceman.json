@@ -5,7 +5,7 @@
             "network_type": "sifs",
             "inputs": {
                 "history": [
-                    [0, 1, 2, 3, 4],
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
                         "pz",
@@ -15,19 +15,25 @@
                     ]
                 ]
             },
-            "shr_hidden_sizes": [16, 8],
-            "shr_output_size": 4,
-            "mrg_hidden_sizes": [16, 8],
-            "output_size": 2,
-            "feature_index": 1
+            "outputs": {
+                "fpass": {
+                    "histLat": [ ["all"] ]
+                },
+                "label": {
+                    "parameters": [ ["m", "kt"] ]
+                }
+            },
+            "layers": {
+                "shr_hidden_sizes": [32, 16],
+                "mrg_hidden_sizes": [32, 16],
+                "histLat_size": 8
+            }
         },
         "featNet": {
             "network_type": "sqfe",
             "inputs": {
                 "rgb_image": [
-                    ["all"],
-                    ["all"],
-                    ["r", "g", "b"]
+                    ["all"], ["all"], ["r", "g", "b"]
                 ],
                 "current": [
                     [
@@ -36,16 +42,18 @@
                     ]
                 ]
             },
-            "augment_layer": 2,
-            "hidden_sizes": [512, 128, 32],
-            "output_size": 16
+            "outputs": {
+                "featLat":  [ ["all"] ]
+            },
+            "layers": {
+                "hidden_sizes": [512, 256],
+                "featLat_size": 128,
+                "augment_layer": 0
+            }
         },
         "commNet": {
             "network_type": "svcn",
             "inputs": {
-                "objective": [
-                    ["all"]
-                ],
                 "current": [
                     [
                         "pz",
@@ -53,16 +61,19 @@
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "featNet": [
-                    ["all"]
-                ],
-                "histNet": [
-                    ["all"]
+                "histLat": [ ["all"] ],
+                "featLat": [ ["all"] ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
                 ]
             },
-            "input_size": 44,
-            "hidden_sizes": [64, 32],
-            "output_size": 4
+            "layers": {
+                "hidden_sizes": [100, 100],
+                "histLat_size": 8,
+                "featLat_size": 128
+            }
         }
     },
     "data_augmentation": {

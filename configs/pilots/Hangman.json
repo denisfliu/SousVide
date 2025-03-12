@@ -1,5 +1,5 @@
 {
-    "type": "HPNet_v1",
+    "type": "SVNet_v1",
     "networks": {
         "histNet": {
             "network_type": "sifu",
@@ -8,7 +8,7 @@
                     [ 0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw",
                         "nf", "wx", "wy", "wz"
@@ -20,7 +20,8 @@
                     "histLat": [ ["all"] ]
                 },
                 "label": {
-                    "parameters": [ ["m", "kt"] ]
+                    "parameters": [ ["m", "kt"] ],
+                    "forces": [ ["fx", "fy", "fz"] ]
                 }
             },
             "layers": {
@@ -28,17 +29,40 @@
                 "histLat_size": 8
             }
         },
+        "featNet": {
+            "network_type": "sqfe",
+            "inputs": {
+                "rgb_image": [
+                    ["all"], ["all"], ["r", "g", "b"]
+                ],
+                "current": [
+                    [
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ]
+            },
+            "outputs": {
+                "featLat":  [ ["all"] ]
+            },
+            "layers": {
+                "hidden_sizes": [512, 256],
+                "featLat_size": 128,
+                "augment_layer": 0
+            }
+        },
         "commNet": {
-            "network_type": "hpcn",
+            "network_type": "svcn",
             "inputs": {
                 "current": [
                     [
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ ["all"] ]
+                "histLat": [ ["all"] ],
+                "featLat": [ ["all"] ]
             },
             "outputs": {
                 "command": [
@@ -47,7 +71,8 @@
             },
             "layers": {
                 "hidden_sizes": [100, 100],
-                "histLat_size": 8
+                "histLat_size": 8,
+                "featLat_size": 128
             }
         }
     },

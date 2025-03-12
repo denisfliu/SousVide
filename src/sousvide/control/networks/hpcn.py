@@ -7,67 +7,79 @@ from sousvide.control.networks.base_net import BaseNet
 
 class HPCN(BaseNet):
     def __init__(self,
-                 inputs: Dict[str,Dict[str,List[Union[str,int]]]],
-                 input_size:int, hidden_sizes:List[int], output_size:int,
-                 dropout=0.1,network_type="mlp"):
+                 inputs:  Dict[str, List[List[Union[int, str]]]],
+                 outputs: Dict[str, List[List[Union[int, str]]]],
+                 layers:  Dict[str, Union[int,List[int]]],
+                 dropout=0.1,
+                 network_type="hpcn"):
         """
         Initialize a HotPot Command Network.
 
         Args:
             inputs:         Inputs config.
-            hidden_sizes:   List of hidden layer sizes.
-            output_size:    Output size.
+            outputs:        Outputs config.
+            layers:         Layers config.
             dropout:        Dropout rate.
+            network_type:   Type of network.
 
         Variables:
             network_type:   Type of network.
-            inputs:         Inputs (overloaded).
+            input_indices:  Indices of the input.
+            fpass_indices:  Indices of the forward-pass output.
+            label_indices:  Indices of the label output.
             networks:       List of neural networks.
         """
 
         # Initialize the parent class
         super(HPCN, self).__init__()
 
-        # Extract the inputs
-        input_indices = nh.get_input_indices(inputs)
-        
-        # Populate the layers
-        layers = []
-        prev_size = input_size
+        # Extract the configs
+        input_indices = nh.get_io_indices(inputs)
+        fpass_indices = nh.get_io_indices(outputs)
+        label_indices = nh.get_io_indices(outputs)
 
-        for size in hidden_sizes:
-            layers.append(nn.Linear(prev_size, size))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(dropout))
-            prev_size = size
-        layers.append(nn.Linear(prev_size, output_size))
+        Ncr =  len(input_indices["current"][-1])
+        NhL = layers["histLat_size"]
+        prev_size = Ncr + NhL
+        output_size = nh.get_io_size(label_indices)
+        hidden_sizes = layers["hidden_sizes"]
+
+        # Populate the network
+        networks = []
+        for layer_size in hidden_sizes:
+            networks.append(nn.Linear(prev_size, layer_size))
+            networks.append(nn.ReLU())
+            networks.append(nn.Dropout(dropout))
+
+            prev_size = layer_size
+
+        networks.append(nn.Linear(prev_size, output_size))
 
         # Define the model
         self.network_type = network_type
         self.input_indices = input_indices
-        self.networks = nn.Sequential(*layers)
+        self.fpass_indices = fpass_indices
+        self.label_indices = label_indices
+        self.networks = nn.Sequential(*networks)
     
     def forward(self,
-                xnn_obj:torch.Tensor,
-                xnn_curr:torch.Tensor,
-                xnn_hNet:torch.Tensor) -> torch.Tensor:
+                xnn_cr:torch.Tensor,
+                xnn_hL:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn_obj:    Objective input.
-            xnn_curr:   Current input.
-            xnn_fNet:   Feature Network input.
-            xnn_hNet:   History Network input.
+            xnn_cr: Current input.
+            xnn_hL: History Network input.
 
         Returns:
-            ynn:        Output tensor.
+            ynn:    Output tensor.
         """
 
         # Concatenate the inputs
-        xnn = torch.cat([xnn_obj,xnn_curr,xnn_hNet],dim=1)
+        znn = torch.cat([xnn_cr,xnn_hL],dim=1)
         
         # Feedforward
-        ynn = self.networks(xnn)         
+        ynn = self.networks(znn)         
 
         return ynn

@@ -4,7 +4,7 @@ import torch
 
 from typing import Dict,Union,List
 
-import sousvide.synthesize.data_utils as du
+import sousvide.synthesize.synthesize_helper as sh
 
 from sousvide.control.pilot import Pilot
 
@@ -85,23 +85,25 @@ def generate_observations(pilot:Pilot,
     Nobs = 0
     for trajectory_data,image_data in zip(trajectory_data_set["data"],image_data_set["data"]):
         # Unpack data
-        Tro,Xro,Uro = trajectory_data["Tro"],trajectory_data["Xro"],trajectory_data["Uro"]
+        Tro,Xro = trajectory_data["Tro"],trajectory_data["Xro"]
+        Uro,Fro = trajectory_data["Uro"],trajectory_data["Fro"]
         obj,Ndata = trajectory_data["obj"],trajectory_data["Ndata"]
         rollout_id,course = trajectory_data["rollout_id"],trajectory_data["course"]
         frame = trajectory_data["frame"]
-
+        params = [frame["mass"],frame["force_normalized"]]
+      
         # Decompress and extract the image data
-        Imgs = du.decompress_data(image_data)["images"]
+        Imgs = sh.decompress_data(image_data)["images"]
 
-        # Check if images are raw or processed. Raw images are in (N,H,W,C) format while
-        # processed images are in (N,C,H,W) format.
+        # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
+        # processed images are in (B,C,H,W) format.
         height,width = Imgs.shape[1],Imgs.shape[2]
 
         if height == 224 and width == 224:
             Imgs = np.transpose(Imgs, (0, 3, 1, 2))
 
-        # Create Rollout Data
-        Xnn,Ynn = [],[]
+        # Create Observation Data
+        IO_nn = []
         upr = np.zeros(4)
         znn_cr = torch.zeros(pilot.model.Nz).to(pilot.device)
         for k in range(Ndata):
@@ -115,31 +117,37 @@ def generate_observations(pilot:Pilot,
 
             # Extract other data
             tcr = Tro[k]
-            ucr = Uro[:,k]
+            ucr,fcr = Uro[:,k],Fro[:,k]
             img_cr = Imgs[k,:,:,:]
 
-            # Generate the sfti data
-            _,znn_cr,nn_io,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
-            ynn = {"unn":ucr,"mfn":np.array([frame["mass"],frame["force_normalized"]]),"onn":xcr}
+            # Rollout
+            _,znn_cr,io_nn,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
 
-            # Store the data
+            # Build the labels
+            labels = {
+                "parameters": torch.tensor(params),"forces": torch.tensor(fcr),
+                "command": torch.tensor(ucr),"featLat": znn_cr
+            }
+
+            # Collect observation data
             if k % nss == 0:
-                Xnn.append(xnn)
-                Ynn.append(ynn)
+                for io in io_nn.values():
+                    io["outputs"] = sh.update_output_dict(io["outputs"],labels)
+                
+                IO_nn.append(io_nn)
 
             # Loop updates
             upr = ucr
 
         # Store the observation data
         observations = {
-            "Xnn":Xnn,
-            "Ynn":Ynn,
-            "Ndata":len(Xnn),
+            "IO_nn":IO_nn,
+            "Ndata":len(IO_nn),
             "rollout_id":rollout_id,
             "course":course,"frame":frame
         }
         Observations.append(observations)
-        Nobs += len(Xnn)
+        Nobs += len(IO_nn)
 
     observations_data_set = {"data":Observations,
                     "set":trajectory_data_set["set"],

@@ -1,18 +1,11 @@
 {
-    "rgb_image": [
-        [null],
-        [null],
-        ["r", "g", "b"]
-    ],
     "objective": [
-        [
             "dpx", "dpy", "dpz",
             "vxi", "vyi", "vzi",
             "qxi", "qyi", "qzi", "qwi",
             "vxf", "vyf", "vzf",
             "qxf", "qyf", "qzf", "qwf",
             "T"
-        ]
     ],
     "current": [
         [
@@ -22,18 +15,21 @@
             "qx","qy","qz","qw"
         ]
     ],
-    "history": [
-        [null],
+    "command": [
         [
-            "dt",
-            "px","py","pz",
-            "vx","vy","vz",
-            "qx","qy","qz","qw",
             "nf","wx","wy","wz"
         ]
     ],
-    "feature": [
-        [null],
+    "parameters": [
+        [
+            "m",
+            "kt"
+        ]
+    ],
+    "histLat": [
+        [null]
+    ],
+    "featLat": [
         [null]
     ]
 }

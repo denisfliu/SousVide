@@ -620,7 +620,7 @@ def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
 
         print("------------------------------------------------------------------------------------------")
         print(f"Pilot Name        : {pilot.name}")
-        print(f"Neural Network(s) : {pilot.model.name} [{', '.join(pilot.model.network.keys())}]")
+        print(f"Neural Network(s) : {pilot.model.name} [{', '.join(pilot.model.networks.keys())}]")
         print(f"Approx. Data Count: {Ndata}")
 
     print("==========================================================================================")

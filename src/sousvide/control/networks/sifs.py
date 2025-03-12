@@ -6,106 +6,104 @@ from typing import List,Dict,Union
 
 class SIFS(nn.Module):
     def __init__(self,
-                 inputs:Dict[str,Dict[str,List[Union[str,int]]]],
-                 shr_hidden_sizes:List[int],shr_output_size:int,mrg_hidden_sizes:List[int],
-                 output_size:int,
-                 feature_index:int,
+                 inputs:  Dict[str, List[List[Union[int, str]]]],
+                 outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
+                 layers:  Dict[str, Union[int,List[int]]],
                  dropout=0.1,
                  network_type="sifs"):
         """
         Initialize a Sequence Into Features (Shared) feedforward model.
 
         Args:
-            inputs:             Inputs config.
-            shr_hidden_sizes:   Hidden sizes of the shared network.
-            shr_output_size:    Output size of the shared network.
-            mrg_hidden_sizes:   Hidden sizes of the merged network.
-            output_size:        Output size of the merged network.
-            feature_index:      Index of the feature to be extracted.
-            dropout:            Dropout rate.
-            network_type:       Type of network.
+            inputs:         Inputs config.
+            outputs:        Outputs config.
+            layers:         Layers config.
+            dropout:        Dropout rate.
+            network_type:   Type of network.
 
         Variables:
-            network_type:       Type of network.
-            input_indices:      Indices of the inputs.
-            networks:           Network
-            use_subnet:         Flag to use the subnet.
-            subnet_idx:         Index of the subnet.
-
+            network_type:   Type of network.
+            input_indices:  Indices of the input.
+            fpass_indices:  Indices of the forward-pass output.
+            label_indices:  Indices of the label output.
+            networks:       Network layers.
+            use_fpass:      Use feature forward-pass.
         """
 
         # Initialize the parent class
         super(SIFS, self).__init__()
 
         # Extract the inputs
-        input_indices = nh.get_input_indices(inputs)
-
-        # Check the arguments are valid
-        assert feature_index < len(mrg_hidden_sizes), "Feature index out of range."
+        input_indices = nh.get_io_indices(inputs)
+        fpass_indices = nh.get_io_indices(outputs["fpass"])
+        label_indices = nh.get_io_indices(outputs["label"])
         
-        # Populate the shared layers
-        shared_layers = []
-        prev_size = len(inputs["history"][-1])
-
-        for idx,size in enumerate(shr_hidden_sizes):
-            shared_layers.append(nn.Linear(prev_size, size))
-
-            shared_layers.append(nn.ReLU())
-            shared_layers.append(nn.Dropout(dropout))
-            prev_size = size
+        shr_prev_size = len(input_indices["history"][-1])
+        shr_hidden_sizes = layers["shr_hidden_sizes"][:-1]
+        shr_output_size = layers["shr_hidden_sizes"][-1]
         
-        shared_layers.append(nn.Linear(prev_size, shr_output_size))
+        mrg_prev_size = shr_output_size*len(input_indices["history"][0])
+        mrg_hidden_sizes = layers["mrg_hidden_sizes"] + [layers["histLat_size"]]
 
-        # Populate the merged layers
-        merged_layers = []
-        prev_size = shr_output_size*len(inputs["history"][0])
+        output_size = nh.get_io_size(label_indices)
 
-        for idx,size in enumerate(mrg_hidden_sizes):
-            merged_layers.append(nn.Linear(prev_size, size))
+        # Populate the shared networks
+        shared_networks = []
+        for layer_size in shr_hidden_sizes:
+            shared_networks.append(nn.Linear(shr_prev_size, layer_size))
+            shared_networks.append(nn.ReLU())
+            shared_networks.append(nn.Dropout(dropout))
 
-            if idx == feature_index:
-                subnet_idx = len(merged_layers)
+            shr_prev_size = layer_size
+        
+        shared_networks.append(nn.Linear(shr_prev_size, shr_output_size))
 
-            merged_layers.append(nn.ReLU())
-            merged_layers.append(nn.Dropout(dropout))
-            prev_size = size
+        # Populate the merged networks
+        merged_networks = []
+        for layer_size in mrg_hidden_sizes:
+            merged_networks.append(nn.Linear(mrg_prev_size, layer_size))
+            merged_networks.append(nn.ReLU())
+            merged_networks.append(nn.Dropout(dropout))
 
-        merged_layers.append(nn.Linear(prev_size, output_size))
+            mrg_prev_size = layer_size
+        
+        merged_networks.append(nn.Linear(mrg_prev_size, output_size))
 
         # Combine the layers
         networks = nn.ModuleDict({
-            "shared": nn.Sequential(*shared_layers),
-            "merged": nn.Sequential(*merged_layers)
+            "shared": nn.Sequential(*shared_networks),
+            "merged": nn.Sequential(*merged_networks)
         })
 
         # Define the model
         self.network_type = network_type
         self.input_indices = input_indices
+        self.fpass_indices = fpass_indices
+        self.label_indices = label_indices
         self.networks = networks
-        self.use_subnet = False
-        self.subnet_idx = subnet_idx
+        self.use_fpass = True
     
-    def forward(self, xnn_hist:torch.Tensor) -> torch.Tensor:
+    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn_hist:   History input.
+            xnn:    History input.
 
         Returns:
-            ynn:        Output tensor.
+            ynn:    Output tensor.
         """
 
         # Forward pass on the shared network
-        ysn = self.networks["shared"](xnn_hist)
+        znn = self.networks["shared"](xnn)
 
         # Flatten the input tensor
-        xmn = torch.flatten(ysn, start_dim=-2)
+        znn = torch.flatten(znn, start_dim=-2)
 
         # Forward pass on the merged network
-        if self.use_subnet == True:
-            ynn = self.networks["merged"][:self.subnet_idx](xmn)
+        if self.use_fpass == True:
+            ynn = self.networks["merged"][:-1](znn)
         else:
-            ynn = self.networks["merged"](xmn)
+            ynn = self.networks["merged"](znn)
 
         return ynn

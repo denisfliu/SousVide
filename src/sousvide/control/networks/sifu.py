@@ -7,10 +7,9 @@ from sousvide.control.networks.base_net import BaseNet
 
 class SIFU(BaseNet):
     def __init__(self,
-                 inputs: Dict[str,Dict[str,List[Union[str,int]]]],
-                 hidden_sizes:List[int],
-                 output_size:int,
-                 feature_index:int,
+                 inputs:  Dict[str, List[List[Union[int, str]]]],
+                 outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
+                 layers:  Dict[str, Union[int,List[int]]],
                  dropout=0.1,
                  network_type="sifu"):
         """
@@ -18,70 +17,69 @@ class SIFU(BaseNet):
 
         Args:
             inputs:         Inputs config.
-            hidden_sizes:   Hidden sizes.
-            output_size:    Output size.
-            feature_index:  Index of the feature to be extracted.
+            outputs:        Outputs config.
+            layers:         Layers config.
             dropout:        Dropout rate.
             network_type:   Type of network.
 
         Variables:
             network_type:   Type of network.
-            input_indices:  Indices of the inputs.
-            networks:       Network
-            use_subnet:     Flag to use the subnet.
-            subnet_idx:     Index of the subnet.
+            input_indices:  Indices of the input.
+            fpass_indices:  Indices of the forward-pass output.
+            label_indices:  Indices of the label output.
+            networks:       Network layers.
+            use_fpass:      Use feature forward-pass.
         """
 
         # Initialize the parent class
         super(SIFU, self).__init__()
 
-        # Extract the inputs
-        input_indices = nh.get_input_indices(inputs)
-        
-        # Check the arguments are valid
-        assert feature_index < len(hidden_sizes), "Feature index out of range."
-        
-        # Populate the layers
-        layers = []
-        prev_size = nh.get_input_size(inputs["history"])
+        # Extract the configs
+        input_indices = nh.get_io_indices(inputs)
+        fpass_indices = nh.get_io_indices(outputs["fpass"])
+        label_indices = nh.get_io_indices(outputs["label"])
 
-        for idx,size in enumerate(hidden_sizes):
-            layers.append(nn.Linear(prev_size, size))
+        prev_size = nh.get_io_size(input_indices)
+        hidden_sizes = layers["hidden_sizes"] + [layers["histLat_size"]]
+        output_size = nh.get_io_size(label_indices)
 
-            if idx == feature_index:
-                subnet_idx = len(layers)
+        # Populate the network
+        networks = []
+        for layer_size in hidden_sizes:
+            networks.append(nn.Linear(prev_size, layer_size))
+            networks.append(nn.ReLU())
+            networks.append(nn.Dropout(dropout))
 
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(dropout))
-            prev_size = size
+            prev_size = layer_size
         
-        layers.append(nn.Linear(prev_size, output_size))
+        networks.append(nn.Linear(prev_size, output_size))
 
         # Define the model
         self.network_type = network_type
         self.input_indices = input_indices
-        self.networks = nn.Sequential(*layers)
-        self.use_subnet = True
-        self.subnet_idx = subnet_idx
+        self.fpass_indices = fpass_indices
+        self.label_indices = label_indices
+        self.networks = nn.Sequential(*networks)
+        self.use_fpass = True
 
-    def forward(self, xnn_hist:torch.Tensor) -> torch.Tensor:
+    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn_hist:   History input.
+            xnn:    History input.
 
         Returns:
-            ynn:        Output tensor.
+            ynn:    Output tensor.
         """
 
         # Flatten the input tensor
-        xnn = torch.flatten(xnn_hist, start_dim=-2)
+        znn = torch.flatten(xnn, start_dim=-2)
 
         # Forward pass
-        if self.use_subnet == True:
-            ynn = self.networks[:self.subnet_idx](xnn)
+        if self.use_fpass == True:
+            ynn = self.networks[:-1](znn)
         else:
-            ynn = self.networks(xnn)
+            ynn = self.networks(znn)
         
         return ynn

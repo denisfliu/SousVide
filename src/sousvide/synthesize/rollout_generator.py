@@ -10,7 +10,6 @@ from tqdm.notebook import trange
 import figs.utilities.trajectory_helper as th
 import figs.tsplines.min_snap as ms
 import sousvide.synthesize.synthesize_helper as sh
-import sousvide.synthesize.data_utils as du
 
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
@@ -18,7 +17,7 @@ from figs.dynamics.model_specifications import generate_specifications
 
 def generate_rollout_data(cohort_name:str,method_name:str,
                           flights:List[Tuple[str,str]],
-                          Nro_sv:int=50):
+                          Nro_sv:int=50,rollout_forced:str=None):
     
     """
     Generates flight data for a given cohort. A cohort comprises a set of courses flown on a specific
@@ -54,9 +53,13 @@ def generate_rollout_data(cohort_name:str,method_name:str,
     Nro_tp = sample_set_config["reps"]
     Ntp_sc = sample_set_config["rate"]
     err_tol = sample_set_config["tolerance"]
-    rollout_name = sample_set_config["rollout"]
     policy_name = sample_set_config["policy"]
     frame_name = sample_set_config["frame"]
+
+    if rollout_forced is None:
+        rollout_name = sample_set_config["rollout"]
+    else:
+        rollout_name = rollout_forced
 
     # Extract policy and frame
     policy_path = os.path.join(workspace_path,"configs","policy",policy_name+".json")
@@ -323,21 +326,21 @@ def generate_rollouts(
         ctl = VehicleRateMPC(course_config,policy_config,frame_config)
         
         # Simulate the flight
-        Tro,Xro,Uro,Imgs,Tsol,Adv = sim.simulate(ctl,t0,tf,x0)
+        Tro,Xro,Uro,Iro,Fro,Tsol = sim.simulate(ctl,t0,tf,x0)
         
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < err_tol:
             # Package the rollout data
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,
-                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,"Adv":Adv,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
+                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":str(idx).zfill(5),
                 "course":course_config["name"],
                 "frame":frame_config}
 
             images = {
-                "images":Imgs,
+                "images":Iro,
                 "rollout_id":str(idx).zfill(5),"course":course_config["name"]
             }
 
@@ -384,7 +387,7 @@ def save_rollouts(cohort_path:str,course_name:str,
     image_data_set_path = os.path.join(rollout_course_path,"images"+data_set_name+".pt")
 
     # Compress the image data
-    Images = du.compress_data(Images)
+    Images = sh.compress_data(Images)
 
     trajectory_data_set = {"data":Trajectories,
                            "tXUd":tXUd,

@@ -7,9 +7,9 @@ from sousvide.control.networks.base_net import BaseNet
 
 class SIFT(BaseNet):
     def __init__(self,
-                 inputs: Dict[str,Dict[str,List[Union[str,int]]]],
-                 d_model:int, num_heads:int, d_ff:int, num_layers:int,
-                 output_size:int,
+                 inputs:  Dict[str, List[List[Union[int, str]]]],
+                 outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
+                 layers:  Dict[str, Union[int,List[int]]],
                  dropout=0.1,
                  network_type="sift"):
         """
@@ -17,26 +17,32 @@ class SIFT(BaseNet):
         
         Args:
             inputs:         Inputs config.
-            num_heads:      Number of heads.
-            d_ff:           Dimension of the feedforward layer.
-            num_layers:     Number of layers.
-            output_size:    Output size.
+            outputs:        Outputs config.
+            layers:         Layers config.
             dropout:        Dropout rate.
             network_type:   Type of network.
 
         Variables:
+            network_type:   Type of network.
+            input_indices:  Indices of the input.
+            fpass_indices:  Indices of the forward-pass output.
+            label_indices:  Indices of the label output.
+            networks:       Network layers.
             position:       Positional encoding.
-            fc_in:          Input layer.
-            encoder:        Encoder.
-            fc_out:         Output layer
-
+            use_fpass:      Use feature forward-pass.
         """
 
         # Initialize the parent class
         super(SIFT, self).__init__()
 
         # Extract the inputs
-        input_indices = nh.get_input_indices(inputs)
+        input_indices = nh.get_io_indices(inputs)
+        fpass_indices = nh.get_io_indices(outputs["fpass"])
+        label_indices = nh.get_io_indices(outputs["label"])
+
+        d_model,d_ff = layers["d_model"],layers["d_ff"]
+        num_heads,num_layers = layers["num_heads"],layers["num_layers"]
+        output_size = nh.get_io_size(label_indices)
 
         # Populate the layers
         encoder_layer = nn.TransformerEncoderLayer(
@@ -55,8 +61,11 @@ class SIFT(BaseNet):
         # Define the model
         self.network_type = network_type
         self.input_indices = input_indices
+        self.fpass_indices = fpass_indices
+        self.label_indices = label_indices
         self.networks = networks
         self.position = self._generate_positional_encoding(d_model, len(inputs["history"][0]))
+        self.use_fpass = True
 
     def _generate_positional_encoding(self, d_model, max_seq_len):
         """
@@ -80,24 +89,26 @@ class SIFT(BaseNet):
 
         return pe.unsqueeze(0)  # Shape: (1, max_seq_len, d_model)
     
-    def forward(self, xnn_hist:torch.Tensor) -> torch.Tensor:
+    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn_hist:   History input.
+            xnn:   History input.
 
         Returns:
             ynn:        Output tensor.
         """
 
         # Forward pass through embedding layer
-        zem = self.networks["fc_in"](xnn_hist) + self.position[:, :xnn_hist.size(1), :].to(xnn_hist.device)
+        znn = self.networks["fc_in"](xnn) + self.position[:, :xnn.size(1), :].to(xnn.device)
         
         # Pass through the transformer
-        ztf = self.networks["encoder"](zem)
+        znn = self.networks["encoder"](znn)
 
-        # Transform embedding into output tensor
-        ynn = self.networks["fc_out"](ztf[:,-1,:])
+        if self.use_fpass == True:
+            ynn = znn[:,-1,:]
+        else:
+            ynn = self.networks["fc_out"](znn[:,-1,:])
         
         return ynn
