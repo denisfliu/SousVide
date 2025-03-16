@@ -3,8 +3,9 @@ import sousvide.control.network_helper as nh
 
 from torch import nn
 from typing import List,Dict,Union
+from sousvide.control.networks.base_net import BaseNet
 
-class SIFS(nn.Module):
+class SIFS(BaseNet):
     def __init__(self,
                  inputs:  Dict[str, List[List[Union[int, str]]]],
                  outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
@@ -27,16 +28,18 @@ class SIFS(nn.Module):
             fpass_indices:  Indices of the forward-pass output.
             label_indices:  Indices of the label output.
             networks:       Network layers.
+            
             use_fpass:      Use feature forward-pass.
+            frame_len:      Frame length flag with size as value.
         """
 
         # Initialize the parent class
         super(SIFS, self).__init__()
 
         # Extract the inputs
-        input_indices = nh.get_io_indices(inputs)
-        fpass_indices = nh.get_io_indices(outputs["fpass"])
-        label_indices = nh.get_io_indices(outputs["label"])
+        input_indices = nh.get_io_idxs(inputs)
+        fpass_indices = nh.get_io_idxs(outputs["fpass"])
+        label_indices = nh.get_io_idxs(outputs["label"])
         
         shr_prev_size = len(input_indices["history"][-1])
         shr_hidden_sizes = layers["shr_hidden_sizes"][:-1]
@@ -81,7 +84,9 @@ class SIFS(nn.Module):
         self.fpass_indices = fpass_indices
         self.label_indices = label_indices
         self.networks = networks
+
         self.use_fpass = True
+        self.nhy = max(input_indices["history"][0])+1
     
     def forward(self, xnn:torch.Tensor) -> torch.Tensor:
         """

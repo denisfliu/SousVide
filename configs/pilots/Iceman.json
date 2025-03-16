@@ -1,5 +1,4 @@
 {
-    "type": "SVNet_v2",
     "networks": {
         "histNet": {
             "network_type": "sifs",

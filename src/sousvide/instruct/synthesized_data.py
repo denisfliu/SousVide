@@ -6,14 +6,28 @@ from torch import NoneType, nn
 from torch.utils.data import DataLoader,Dataset
 from tqdm.notebook import trange
 from sousvide.control.pilot import Pilot
-from typing import List,Tuple,Literal,Union,Dict,Callable
+from typing import List,Tuple,Literal,Union,Dict,Any
 from enum import Enum
 
 class ObservationData(Dataset):
-    def __init__(self, Xnn:List[Dict[str,torch.Tensor]], Ynn:List[torch.Tensor],extractor:Callable):      
+    def __init__(self,
+                 Xnn:List[List[Union[torch.Tensor,Dict[str,torch.Tensor]]]],
+                 Ynn:List[Union[torch.Tensor,Dict[str,torch.Tensor]]]):
+        """
+        Initialize the Observation Data.
+
+        Args:
+            Xnn:  The input observation data.
+            Ynn:  The output observation data.
+        """
+
+        # Squeeze the data
+        Xnn = squeeze_data(Xnn)
+        Ynn = squeeze_data(Ynn)
+
+        # Store the data
         self.Xnn = Xnn
         self.Ynn = Ynn
-        self.extractor = extractor
 
     def __len__(self):
         return len(self.Xnn)
@@ -22,136 +36,42 @@ class ObservationData(Dataset):
         xnn = self.Xnn[idx]
         ynn = self.Ynn[idx]
 
-        return self.extractor(xnn,ynn)
+        return xnn,ynn
     
-def ensure_torch_tensor(variable):
-    if isinstance(variable, np.ndarray):
-        return torch.from_numpy(variable).float()
-    elif isinstance(variable, torch.Tensor):
-        return variable.float()
+def squeeze_data(data:Any):
+    if isinstance(data, torch.Tensor):
+        return data.squeeze()  # Squeeze tensor
+    elif isinstance(data, list):
+        return [squeeze_data(item) for item in data]  # Recursively process lists
+    elif isinstance(data, dict):
+        return {key: squeeze_data(value) for key, value in data.items()}  # Process dictionaries
     else:
-        raise ValueError("The variable is neither a NumPy array nor a PyTorch tensor.")
-
-def generate_dataset(observation_data_path:str,student:Pilot,
-                     mode:Literal["Parameter","Odometry","Commander"],device:torch.device) -> Dataset:
+        return data  # Keep non-tensor values unchanged
+    
+def generate_dataset(data_path:str,device:torch.device) -> Dataset:
     """
     Generate a Pytorch Dataset from the given list of observation data path.
 
     Args:
-        observation_data_path:  Observation data path.
+        data_path:  Observation data path.
+        device:  The device to use.
 
     Returns:
         dset:  The Pytorch Dataset object.
     """
-    Xnn_ds,Ynn_ds = extract_data(observation_data_path)
-    extractor = student.model.get_data[mode]
 
-    return ObservationData(Xnn_ds,Ynn_ds,extractor)
-
-def get_true_states(observation_data_path:str):
-    """
-    Get the true states from the given list of observation data paths.
-
-    Args:
-        observation_data_path:  Observation data path.
-
-    Returns:
-        TrueStates:  The list of true states.
-    """
-    # Load Data Files
-    dir_path  =  os.path.dirname(observation_data_path)
-    base_name = os.path.basename(observation_data_path)
-    traj_name = "trajectories_"+"_".join(base_name.split("_")[1:])
-    traj_path = os.path.join(dir_path,traj_name)
-
-    # Load Trajectory Data
-    traj_data = torch.load(traj_path)
-
-    assert len(traj_data['data'])==1, "Only one trajectory is supported."
-
-    Tact,Xact = traj_data['data'][0]['Tro'],traj_data['data'][0]['Xro']
-
-    return Tact,Xact
-
-def get_input_images(observation_data_path:str,student:Pilot):
-    """
-    Get the input images from the given list of observation data paths.
-
-    Args:
-        observation_data_path:  Observation data path.
-
-    Returns:
-        Images:  The list of input images.
-    """
-    Xnn_ds,_ = extract_data(observation_data_path)
-    extractor = student.model.get_data["Images"]
-
-    Images = []
-    for xnn in Xnn_ds:
-        Images.append(extractor(xnn))
-
-    Images = torch.stack(Images)
-
-    return Images
-
-def get_input_data(observation_data_path:str,student:Pilot):
-    """
-    Get the input from the given list of observation data paths.
-
-    Args:
-        observation_data_path:  Observation data path.
-
-    Returns:
-        Inputs:  The list of inputs.
-    """
-    Xnn_ds,Ynn_ds = extract_data(observation_data_path)
-    extractor = student.model.get_data["Commander"]
-
-    Inputs = []
-    for xnn,ynn in zip(Xnn_ds,Ynn_ds):
-        Inputs.append(extractor(xnn,ynn)[0])
-
-    return Inputs
-
-def extract_data(observation_data_path:str):
-    """
-    Extract the observation data from the given list of observation data paths.
-
-    Args:
-        observation_data_path:  Observation data path.
-
-    Returns:
-        Xnn_ds:  The list of input data.
-        Ynn_ds:  The list of output data.
-    """
-    # Load Data Files
-    observation_data = torch.load(observation_data_path)
+    # Load the topic data
+    topic_data = torch.load(data_path, map_location=device)
 
     # Extract the observation data
-    Xnn_ds,Ynn_ds = [],[]
-    for observations in observation_data["data"]:
-        # Extract the inputs to GPU
-        Xnn = []
-        for xnn_raw in observations["Xnn"]:
-            for key,value in xnn_raw.items():
-                xnn_raw[key] = ensure_torch_tensor(value)
-            Xnn.append(xnn_raw)
-
-        # Extract the labels to GPU
-        Ynn = []
-        for ynn_raw in observations["Ynn"]:
-            for key, value in ynn_raw.items():
-                ynn_raw[key] = ensure_torch_tensor(value)
-            Ynn.append(ynn_raw)
-
-        # Append to the list
-        Xnn_ds.extend(Xnn)
-        Ynn_ds.extend(Ynn)
+    Xnn_ds = topic_data["Xnn"]
+    Ynn_ds = topic_data["Ynn"]
     
-    return Xnn_ds,Ynn_ds
-
+    return ObservationData(Xnn_ds,Ynn_ds)
+    
 def get_data_paths(cohort_name:str,
                    student_name:str,
+                   topic_name:str,
                    course_name:Union[str,None]=None
                    ) -> Tuple[List[str],str]:
     """
@@ -173,14 +93,14 @@ def get_data_paths(cohort_name:str,
     # Some useful path(s)
     workspace_path = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    observation_data_path = os.path.join(
-        workspace_path,"cohorts",cohort_name,"observation_data",student_name)
+    topic_data_path = os.path.join(
+        workspace_path,"cohorts",cohort_name,"observation_data",student_name,topic_name)
 
     # Get course paths
     if course_name is None:
-        course_paths = [course.path for course in os.scandir(observation_data_path) if course.is_dir()]
+        course_paths = [course.path for course in os.scandir(topic_data_path) if course.is_dir()]
     else:
-        course_paths = [os.path.join(observation_data_path,course_name)]
+        course_paths = [os.path.join(topic_data_path,course_name)]
 
     # Split into training and testing data
     train_data,test_data = [],[]
@@ -190,8 +110,10 @@ def get_data_paths(cohort_name:str,
         for file in os.scandir(course_path):
             data_paths.append(file.path)
 
+        # Sort the data files
         data_paths.sort()
 
+        # Split into training and testing data (re-use if only one file)
         if len(data_paths) == 1:
             train_data.append(data_paths[0])
             test_data.append(data_paths[0])

@@ -5,6 +5,7 @@ import torch
 from typing import Dict,Union,List
 
 import sousvide.synthesize.synthesize_helper as sh
+import sousvide.control.network_helper as nh
 
 from sousvide.control.pilot import Pilot
 
@@ -39,7 +40,7 @@ def generate_observation_data(cohort:str,roster:List[str],subsample:float=1.0):
         # Get Course Folders
         courses = [folder for folder in os.listdir(rollout_folder_path)]
         
-        Nobs = 0
+        Ndata = 0
         for course in courses:
             # Load Trajectory Data
             rollout_data_path = os.path.join(rollout_folder_path,course)
@@ -50,25 +51,30 @@ def generate_observation_data(cohort:str,roster:List[str],subsample:float=1.0):
                 file for file in os.listdir(rollout_data_path)
                 if file.startswith("images") and file.endswith(".pt")])
             
-            # Generate Observation Data (sans images)
-            for trajectory_data_file,image_data_file in zip(trajectory_data_files,image_data_files):
-                trajectory_data_set = torch.load(os.path.join(rollout_data_path,trajectory_data_file))
-                image_data_set = torch.load(os.path.join(rollout_data_path,image_data_file))
-                observations = generate_observations(pilot,trajectory_data_set,image_data_set,subsample)
-                Nobs += observations["Nobs"]
+            # Generate Observation Data
+            for idx,(traj_data_file,imgs_data_file) in enumerate(zip(trajectory_data_files,image_data_files)):
+                # Load the Data
+                traj_data_set = torch.load(os.path.join(rollout_data_path,traj_data_file))
+                imgs_data_set = torch.load(os.path.join(rollout_data_path,imgs_data_file))
+                
+                # Extract the Observations
+                observations,Nobs = generate_observations(pilot,traj_data_set,imgs_data_set,subsample)
+                Ndata += Nobs
 
-                # # Save the observations
-                save_observations(cohort_path,course,pilot.name,observations)
+                # Save the observations
+                save_observations(cohort_path,course,pilot.name,observations,idx)
 
         print("Data Counts ------------------------------------------------------------------------------")
-        print("Extracted",Nobs,"observations from",len(courses),"course(s).")
+        print("Extracted",Ndata,"observations from",len(courses),"course(s).")
+        print("------------------------------------------------------------------------------------------")
+
     print("==========================================================================================")
 
 
 def generate_observations(pilot:Pilot,
-                            trajectory_data_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
-                            image_data_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
-                            subsample:float=1) -> Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]]:
+                          traj_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
+                          imgs_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
+                          subsample:float=1) -> Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]]:
     
     # Initialize the observation data dictionary
     Observations = []
@@ -83,17 +89,17 @@ def generate_observations(pilot:Pilot,
 
     # Generate observations
     Nobs = 0
-    for trajectory_data,image_data in zip(trajectory_data_set["data"],image_data_set["data"]):
+    for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
-        Tro,Xro = trajectory_data["Tro"],trajectory_data["Xro"]
-        Uro,Fro = trajectory_data["Uro"],trajectory_data["Fro"]
-        obj,Ndata = trajectory_data["obj"],trajectory_data["Ndata"]
-        rollout_id,course = trajectory_data["rollout_id"],trajectory_data["course"]
-        frame = trajectory_data["frame"]
+        Tro,Xro = traj_data["Tro"],traj_data["Xro"]
+        Uro,Fro = traj_data["Uro"],traj_data["Fro"]
+        obj,Ndata = traj_data["obj"],traj_data["Ndata"]
+        rollout_id,course = traj_data["rollout_id"],traj_data["course"]
+        frame = traj_data["frame"]
         params = [frame["mass"],frame["force_normalized"]]
       
         # Decompress and extract the image data
-        Imgs = sh.decompress_data(image_data)["images"]
+        Imgs = sh.decompress_data(imgs_data)["images"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.
@@ -103,63 +109,75 @@ def generate_observations(pilot:Pilot,
             Imgs = np.transpose(Imgs, (0, 3, 1, 2))
 
         # Create Observation Data
-        IO_nn = []
-        upr = np.zeros(4)
-        znn_cr = torch.zeros(pilot.model.Nz).to(pilot.device)
+        Xnn,Ynn = [],[]
+        unn_pr = np.zeros(4)
+        znn_cr = {key: torch.zeros(pilot.policy.Nznn[key]) for key in pilot.policy.Nznn.keys()}
         for k in range(Ndata):
             # Generate current state (with/without noise augmentation)
             if aug_type == "additive":
-                xcr = Xro[:,k] + np.random.normal(aug_mean,aug_std)
+                x_cr = Xro[:,k] + np.random.normal(aug_mean,aug_std)
             elif aug_type == "multiplicative":
-                xcr = Xro[:,k] * (1 + np.random.normal(aug_mean,aug_std))
+                x_cr = Xro[:,k] * (1 + np.random.normal(aug_mean,aug_std))
             else:
-                xcr = Xro[:,k]
+                x_cr = Xro[:,k]
 
             # Extract other data
-            tcr = Tro[k]
-            ucr,fcr = Uro[:,k],Fro[:,k]
+            t_cr = Tro[k]
+            tx_cr = np.hstack((Tro[k],Xro[:,k]))
+            unn_cr,f_cr = Uro[:,k],Fro[:,k]
             img_cr = Imgs[k,:,:,:]
 
-            # Rollout
-            _,znn_cr,io_nn,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
-
-            # Build the labels
-            labels = {
-                "parameters": torch.tensor(params),"forces": torch.tensor(fcr),
-                "command": torch.tensor(ucr),"featLat": znn_cr
+            # Compute the source labels
+            ynn_srcs = {
+                "current": torch.tensor(tx_cr,dtype=torch.float32).unsqueeze(0),
+                "parameters": torch.tensor(params,dtype=torch.float32).unsqueeze(0),
+                "forces": torch.tensor(f_cr,dtype=torch.float32).unsqueeze(0),
+                "command": torch.tensor(unn_cr,dtype=torch.float32).unsqueeze(0),
             }
 
-            # Collect observation data
-            if k % nss == 0:
-                for io in io_nn.values():
-                    io["outputs"] = sh.update_output_dict(io["outputs"],labels)
-                
-                IO_nn.append(io_nn)
+            # Rollout and collect the inputs
+            _,znn_cr,xnn_cr,_ = pilot.OODA(unn_pr,t_cr,x_cr,obj,img_cr,znn_cr)
+
+            # Extract the labels from source and trim inputs if they don't exist
+            ynn_cr = {}
+            for xnn_key in xnn_cr.keys():
+                if xnn_key == "all":
+                    ynn_idxs = pilot.policy.label_indices
+                else:
+                    ynn_idxs = pilot.policy.networks[xnn_key].label_indices
+
+                try:
+                    ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,use_tensor=True)
+                except:
+                    ynn_cr[xnn_key] = None
+
+            # Collect data conditioned on subsample step and history window
+            if k % nss == 0 and k >= pilot.policy.nhy:
+                Xnn.append(xnn_cr)
+                Ynn.append(ynn_cr)
 
             # Loop updates
-            upr = ucr
+            unn_pr = unn_cr
 
         # Store the observation data
         observations = {
-            "IO_nn":IO_nn,
-            "Ndata":len(IO_nn),
+            "Xnn":Xnn,
+            "Ynn":Ynn,
+            "Ndata":len(Xnn),
             "rollout_id":rollout_id,
             "course":course,"frame":frame
         }
         Observations.append(observations)
-        Nobs += len(IO_nn)
 
-    observations_data_set = {"data":Observations,
-                    "set":trajectory_data_set["set"],
-                    "Nobs":Nobs,
-                    "course":trajectory_data_set["course"]}
+        # Update the observation count
+        Nobs += len(Xnn)
 
-    return observations_data_set
-
+    return Observations,Nobs
 
 def save_observations(cohort_path:str,course_name:str,
                       pilot_name:str,
-                      observations:Dict[str,Union[np.ndarray,int,str]]) -> None:
+                      Observations:List[Dict[str,List[Dict[str,torch.Tensor]]]],
+                      idx_set:int) -> None:
     
     """
     Saves the observation data to a .pt file in folders corresponding to pilot name within the course
@@ -169,23 +187,33 @@ def save_observations(cohort_path:str,course_name:str,
         cohort_path:    Cohort path.
         course_name:    Name of the course.
         pilot_name:     Name of the pilot.
-        observations:   Observation data.
+        Observations:   Observation data.
+        idx_set:        Index of the observation data set.
 
     Returns:
         None:           (observation data saved to cohort directory)
     """
 
-    # Create observation course directory (if it does not exist)
-    observation_pilot_path = os.path.join(cohort_path,"observation_data",pilot_name)
-    if not os.path.exists(observation_pilot_path):
-        os.makedirs(observation_pilot_path)
+    # Use first observation to get relevant keys
+    syllabus = []
+    for key,value in Observations[0]["Ynn"][0].items():
+        if value is not None:
+            syllabus.append(key)
+    
+    for topic_name in syllabus:
+        # Create the topic directory if it doesn't exist
+        topic_path = os.path.join(cohort_path,"observation_data",pilot_name,topic_name,course_name)
+        if not os.path.exists(topic_path):
+            os.makedirs(topic_path)
 
-    observation_course_path = os.path.join(observation_pilot_path,course_name)
-    if not os.path.exists(observation_course_path):
-        os.makedirs(observation_course_path)
+        # Save the observation data
+        data_path = os.path.join(topic_path,"observations"+str(idx_set).zfill(3)+".pt")
 
-    # Save the observations
-    observations_data_path = os.path.join(
-        observation_course_path,"observations"+str(observations["set"])+".pt")
-
-    torch.save(observations,observations_data_path)
+        Xnn,Ynn = [],[]
+        for observations in Observations:
+            for xnn,ynn in zip(observations["Xnn"],observations["Ynn"]):
+                Xnn.append(xnn[topic_name])
+                Ynn.append(ynn[topic_name])
+        data = {"Xnn":Xnn,"Ynn":Ynn,"Ndata":len(Ynn)}
+        
+        torch.save(data,data_path)

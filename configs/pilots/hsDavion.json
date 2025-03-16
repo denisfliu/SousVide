@@ -7,7 +7,7 @@
                     [ 0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw",
                         "nf", "wx", "wy", "wz"
@@ -24,28 +24,6 @@
             },
             "layers": {
                 "hidden_sizes": [64, 32],
-                "histLat_size": 8
-            }
-        },
-        "commNet": {
-            "network_type": "hpcn",
-            "inputs": {
-                "current": [
-                    [
-                        "px", "py", "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
-                "histLat": [ ["all"] ]
-            },
-            "outputs": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
-            },
-            "layers": {
-                "hidden_sizes": [100, 100],
                 "histLat_size": 8
             }
         }

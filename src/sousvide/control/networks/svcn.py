@@ -11,7 +11,7 @@ class SVCN(BaseNet):
                  outputs: Dict[str, List[List[Union[int, str]]]],
                  layers:  Dict[str, Union[int,List[int]]],
                  dropout=0.1,
-                 network_type="mlp"):
+                 network_type="svcn"):
         """
         Initialize a SousVide Command Network.
 
@@ -34,9 +34,9 @@ class SVCN(BaseNet):
         super(SVCN, self).__init__()
 
         # Extract the configs
-        input_indices = nh.get_io_indices(inputs)
-        fpass_indices = nh.get_io_indices(outputs)
-        label_indices = nh.get_io_indices(outputs)
+        input_indices = nh.get_io_idxs(inputs)
+        fpass_indices = nh.get_io_idxs(outputs)
+        label_indices = nh.get_io_idxs(outputs)
 
         Ncr =  len(input_indices["current"][-1])
         NfL,NhL = layers["featLat_size"],layers["histLat_size"]

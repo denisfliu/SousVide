@@ -1,5 +1,4 @@
 {
-    "type": "Vitamin",
     "networks": {
         "histNet": {
             "network_type": "sift",

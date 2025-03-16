@@ -228,8 +228,7 @@ def tXU_to_spatial(tXU_list:List[np.ndarray],
     plt.show(block=False)
 
 def RO_to_spatial(RO:List[Dict[str,Union[np.ndarray,int]]],
-              n:int=None,scale=1.0,plot_last:bool=False,
-              tXUd:Union[None,np.ndarray]=None):
+              n:int=None,scale=1.0,plot_last:bool=False):
 
     # Initialize World Frame Plot
     traj_colors = ["red","green","blue","orange","purple","brown","pink","gray","olive","cyan"]
@@ -268,8 +267,13 @@ def RO_to_spatial(RO:List[Dict[str,Union[np.ndarray,int]]],
     ax.invert_yaxis()
 
     # Rollout the world frame trajectory
+    tXd_dict = {}
     for idx,ro in enumerate(RO):
         Xro = ro["Xro"]
+
+        # Add desired trajectory if not already added
+        if ro["course"] not in tXd_dict.keys():
+            tXd_dict[ro["course"]] = ro["tXd"]
 
         # Plot the world frame trajectory
         ax.plot(Xro[0,:], Xro[1,:], Xro[2,:],color=traj_colors[idx%len(traj_colors)],alpha=0.5)             # spline
@@ -284,9 +288,8 @@ def RO_to_spatial(RO:List[Dict[str,Union[np.ndarray,int]]],
             for i in range(n,Xro.shape[1],n):
                 quad_frame(Xro[:,i],ax,scale=scale)
 
-    if tXUd is not None:
-        ax.plot(tXUd[1,:], tXUd[2,:], tXUd[3,:],color='k', linestyle='--',linewidth=0.8)             # spline
-    
+    for tXd in tXd_dict.values():
+        ax.plot(tXd[1,:], tXd[2,:], tXd[3,:],color='k', linestyle='--',linewidth=0.8)             # spline
     
     ref, = ax.plot([], [], 'k--', label='reference')
     fig.legend(handles=[ref],loc='upper right', bbox_to_anchor=(0.9, 0.7, 0.0, 0.1))
@@ -294,25 +297,18 @@ def RO_to_spatial(RO:List[Dict[str,Union[np.ndarray,int]]],
     plt.tight_layout()
     plt.show(block=False)
 
-def RO_to_time(RO:List[Dict[str,Union[np.ndarray,int]]],tXUd:Union[None,np.ndarray]=None):
-    # # State plot limits
-    # plim = np.array([
-    #     [ -6.0,  6.0],
-    #     [ -6.0,  6.0],
-    #     [  1.0, -5.0]])
-    # vlim = np.array([
-    #     [ -3.0,  3.0],
-    #     [ -3.0,  3.0],
-    #     [  3.0, -3.0]])
-    # qlim = np.array([
-    #     [ -1.2,  1.2],
-    #     [ -1.2,  1.2],
-    #     [ -1.2,  1.2],
-    #     [ -1.2,  1.2]])
+def RO_to_time(RO:List[Dict[str,Union[np.ndarray,int]]]):    
     
+    # Extract Ideals
+    tXd_dict = {}
+    for ro in RO:
+        if ro["course"] not in tXd_dict.keys():
+            tXd_dict[ro["course"]] = ro["tXd"]
+
     # Plot Positions and Velocities
     ylabels = [["$p_x$","$p_y$","$p_z$"],["$v_x$","$v_y$","$v_z$"]]
     fig, axs = plt.subplots(3, 2, figsize=(10, 4))
+
     for i in range(2):
         for j in range(3):
             idd = j+(3*i)
@@ -320,17 +316,11 @@ def RO_to_time(RO:List[Dict[str,Union[np.ndarray,int]]],tXUd:Union[None,np.ndarr
                 Tro,Xro = ro["Tro"],ro["Xro"]  
                 axs[j,i].plot(Tro,Xro[idd,:],alpha=0.5)
 
-            if tXUd is not None:
-                axs[j,i].plot(tXUd[0,:],tXUd[1+idd,:],color='k', linestyle='--',linewidth=0.8)
-        
-            axs[j,i].set_ylabel(ylabels[i][j])
+            for tXd in tXd_dict.values():
+                axs[j,i].plot(tXd[0,:],tXd[1+idd,:],color='k', linestyle='--',linewidth=0.8)
+                axs[j,i].set_xlim([0.0,tXd[0,-1]])
 
-            if tXUd is not None:
-                axs[j,i].set_xlim([0.0,tXUd[0,-1]])
-            # if i == 0:
-            #     axs[j,i].set_ylim(plim[j,:])
-            # else:
-            #     axs[j,i].set_ylim(vlim[j,:])
+            axs[j,i].set_ylabel(ylabels[i][j])
 
     axs[0, 0].set_title('Position')
     axs[0, 1].set_title('Velocity')
@@ -352,13 +342,12 @@ def RO_to_time(RO:List[Dict[str,Union[np.ndarray,int]]],tXUd:Union[None,np.ndarr
             Tro,Xro = ro["Tro"],ro["Xro"]
             axs[i,0].plot(Tro,Xro[idd,:],alpha=0.5)
 
-        if tXUd is not None:
-            axs[i,0].plot(tXUd[0,:],tXUd[7+i,:],color='k', linestyle='--',linewidth=0.8)
+        for tXd in tXd_dict.values():
+            axs[i,0].plot(tXd[0,:],tXd[idd+1,:],color='k', linestyle='--',linewidth=0.8)
+            axs[i,0].set_xlim([0.0,tXd[0,-1]])
 
         axs[i,0].set_ylabel(ylabels[0][i])
-        if tXUd is not None:
-            axs[i,0].set_xlim([0.0,tXUd[0,-1]])
-        # axs[j].set_ylim(qlim[j,:])
+        axs[i,0].set_ylim([-1.2,1.2])
 
     for i in range(4):
         for ro in RO:
@@ -367,15 +356,14 @@ def RO_to_time(RO:List[Dict[str,Union[np.ndarray,int]]],tXUd:Union[None,np.ndarr
 
             axs[i,1].plot(Tro[0:-1],Uro[i,:],alpha=0.5)
 
-        if tXUd is not None:
-            axs[i,1].plot(tXUd[0,:],tXUd[11+i,:],color='k', linestyle='--',linewidth=0.8)
-        
         axs[i,1].set_ylabel(ylabels[1][i])
 
-        if tXUd is not None:
-            axs[i,1].set_xlim([0.0,tXUd[0,-1]])
+        if i == 0:
+            axs[i,1].set_ylim([-1.2,0.2])
+        else:
+            axs[i,1].set_ylim([-5.0,5.0])
 
-    axs[0, 1].invert_yaxis()
+    axs[0,1].invert_yaxis()
     axs[0,0].set_title('Orientation')
     axs[0,1].set_title('Control Inputs')
 
@@ -569,16 +557,16 @@ def plot_rollout_data(cohort:str,Nsamples:int=50,random:bool=True):
             trajectories = torch.load(traj_path)
 
             # Trim the number of samples
-            if Nsamples > len(trajectories['data']):
-                Nsamples = len(trajectories['data'])
+            if Nsamples > len(trajectories):
+                Nsamples = len(trajectories)
                 print(f"Only {Nsamples} samples available in {traj_file}. Showing all samples.")
             else:
                 print(f"Showing {Nsamples} samples from {traj_file}")
-            trajectories['data'] = trajectories['data'][0:Nsamples]
+            trajectories = trajectories[0:Nsamples]
 
             # Plot the data
-            RO_to_spatial(trajectories['data'],scale=0.5,tXUd=trajectories['tXUd'])
-            RO_to_time(trajectories['data'],tXUd=trajectories['tXUd'])
+            RO_to_spatial(trajectories,scale=0.5)
+            RO_to_time(trajectories)
 
 def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
     """"
@@ -599,10 +587,12 @@ def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
 
     # Review the observation data
     for pilot_name in roster:
-        # Get number of observation files
-        observation_files = []
+        # Get a sample topic path in the pilot's directory
         pilot_path = os.path.join(observation_data_path,pilot_name)
-        for root, _, files in os.walk(pilot_path):
+        topic_path = next(os.scandir(pilot_path)).path
+
+        observation_files = []
+        for root, _, files in os.walk(topic_path):
             for file in files:
                 observation_files.append(os.path.join(root, file))
 
@@ -613,14 +603,15 @@ def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
 
         # Get approximate number of observations
         observations = torch.load(observation_files[0])
-        Ndata = (Nobsf-1)*observations['Nobs']
-        
+        Ntrain = (Nobsf-1)*observations["Ndata"]
+        Ntest = observations["Ndata"]
+
         # Load pilot
         pilot = Pilot(cohort,pilot_name)
 
         print("------------------------------------------------------------------------------------------")
-        print(f"Pilot Name        : {pilot.name}")
-        print(f"Neural Network(s) : {pilot.model.name} [{', '.join(pilot.model.networks.keys())}]")
-        print(f"Approx. Data Count: {Ndata}")
+        print(f"Pilot Name              : {pilot.name}")
+        print(f"Neural Network(s)       : {list(pilot.policy.networks.keys())}")
+        print(f"Approx. Train/Test Ratio: {Ntrain}/{Ntest}")
 
     print("==========================================================================================")

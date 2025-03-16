@@ -7,7 +7,7 @@ import torch
 import sousvide.visualize.plot_synthesize as ps
 from tabulate import tabulate
 
-def plot_losses(cohort_name:str,roster:List[str],network:Literal["Parameter","Odometry","Commander"]):
+def plot_losses(cohort_name:str,roster:List[str],topic:str):
     """
     Plot the losses for each student in the roster.
     """
@@ -20,58 +20,71 @@ def plot_losses(cohort_name:str,roster:List[str],network:Literal["Parameter","Od
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
 
-    # Print some overall stuff
+    # Print the header
     print("=====================================================")
-    print("Network Type: ",network)
-    print("Cohort:  ",cohort_name)
+    print("Cohort: ",cohort_name)
+    print("Topic : ",topic)
 
-    # Plot Losses
+    # Create a figure and a set of subplots
     fig, axs = plt.subplots(1, 2, figsize=(5, 3))
 
-    labels = []
+    # Plot the losses for each student
     for student_name in roster:
         try:
             student_path = os.path.join(cohort_path,"roster",student_name)
-            losses_path = os.path.join(student_path,"losses_"+network+".pt")
+            losses_path = os.path.join(student_path,"losses_"+topic+".pt")
 
-            losses = torch.load(losses_path)
-            labels.append(student_name)
+            losses:dict = torch.load(losses_path)
         except:
             print("-----------------------------------------------------")
-            print("No",network,"network found for",student_name)
+            print(f"Student {student_name} did not take {topic}.")
             print("-----------------------------------------------------")
             continue
         
-        if "Neps" in losses.keys():
-            print("-----------------------------------------------------")
-            print("Student:",student_name)
-            print("Epochs :",sum(losses["Neps"]))
+        # Gather plot data
+        Loss_tn,Loss_tt,Neps = [],[],0
+        active_net,update_nets = [],[]
+        Nd_tn,Nd_tt = [],[]
+        T_tn = 0
+        for loss_data in losses.values():
+            Loss_tn.append(loss_data["Loss_tn"])
+            Loss_tt.append(loss_data["Loss_tt"])
 
-            if len(set(losses["Nspl"])) == 1:
-                print("Samples:", losses["Nspl"][0])
-            else:
-                print("Samples:", losses["Nspl"])
+            Neps += loss_data["N_eps"]
 
-            hours = sum(losses["t_train"]) // 3600
-            minutes = (sum(losses["t_train"]) % 3600) // 60
-            seconds = np.around(sum(losses["t_train"]) % 60,1)
-            print(f"t_train: {hours} hour(s), {minutes} minute(s), {seconds} second(s)")
-            # print("t_train: ",losses["t_train"])
+            Nd_tn.append(loss_data["Nd_tn"])
+            Nd_tt.append(loss_data["Nd_tt"])
 
-        loss_train = np.hstack(losses["train"])
-        loss_test = np.hstack(losses["test"])
-        axs[0].plot(loss_train)
-        axs[0].set_title('Training Loss')
+            T_tn += loss_data["t_tn"]
 
-        axs[1].plot(loss_test)
-        axs[1].set_title('Testing Loss')
+        Loss_tn = np.hstack(Loss_tn)
+        Loss_tt = np.hstack(Loss_tt)
+
+        # Compute the training time
+        hours = T_tn // 3600
+        minutes = (T_tn % 3600) // 60
+        seconds = np.around(T_tn % 60,1)
+
+        # Print some overall stuff
+        print("-----------------------------------------------------")
+        print(f"Student:{student_name}")
+        print(f"Train/Test Loss: {np.around(Loss_tn[-1],3)}/{np.around(Loss_tt[-1],3)}")
+        print(f"Train/Test Size: {Nd_tn[-1]}/{Nd_tt[-1]}")
+        print(f"Total Epochs: {Neps}")
+        print(f"Training Time: {hours} hour(s), {minutes} minute(s), {seconds} second(s)")
+
+        axs[0].plot(Loss_tn,label=student_name)
+        axs[1].plot(Loss_tt,label=student_name)
+
+    axs[0].set_title('Training Loss')
+    axs[0].legend(loc='upper right')
+
+    axs[1].set_title('Testing Loss')
+    axs[1].legend(loc='upper right')
 
     # Set common labels
     for ax in axs.flat:
         ax.set(xlabel='Epoch', ylabel='Loss')
-
-    # Add Legend
-    fig.legend(labels, loc='upper right')
 
     # # Set the y-axis limits
     # axs[0].set_ylim([0, 0.06])

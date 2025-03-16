@@ -34,11 +34,11 @@ class HPCN(BaseNet):
         super(HPCN, self).__init__()
 
         # Extract the configs
-        input_indices = nh.get_io_indices(inputs)
-        fpass_indices = nh.get_io_indices(outputs)
-        label_indices = nh.get_io_indices(outputs)
+        input_indices = nh.get_io_idxs(inputs)
+        fpass_indices = nh.get_io_idxs(outputs)
+        label_indices = nh.get_io_idxs(outputs)
 
-        Ncr =  len(input_indices["current"][-1])
+        Ncr = len(input_indices["current"][-1])
         NhL = layers["histLat_size"]
         prev_size = Ncr + NhL
         output_size = nh.get_io_size(label_indices)

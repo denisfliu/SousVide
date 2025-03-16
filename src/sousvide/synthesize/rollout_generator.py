@@ -105,7 +105,6 @@ def generate_rollout_data(cohort_name:str,method_name:str,
         output = ms.solve(course_config)
         if output is not False:
             Tpd,CPd = output
-            tXUd = th.TS_to_tXU(Tpd,CPd,base_frame_specs,hz_ctl)
         else:
             raise ValueError("Desired trajectory not feasible. Aborting.")
         
@@ -152,10 +151,10 @@ def generate_rollout_data(cohort_name:str,method_name:str,
             # Generate rollout data
             Trajectories,Images = generate_rollouts(
                 simulator,course_config,policy_config,
-                Frames,Perturbations,Tdt_ro,err_tol)
+                Frames,Perturbations,Tdt_ro,err_tol,idx)
 
             # Save the rollout data
-            save_rollouts(cohort_path,course_name,Trajectories,Images,tXUd,idx)
+            save_rollouts(cohort_path,course_name,Trajectories,Images,idx)
 
             # Update the data count
             Ndata += sum([trajectory["Ndata"] for trajectory in Trajectories])
@@ -284,7 +283,8 @@ def generate_rollouts(
         policy_config:Dict[str,Union[int,float,List[float]]],
         Frames:Dict[str,Union[np.ndarray,str,int,float]],
         Perturbations:Dict[str,Union[float,np.ndarray]],
-        Tdt_ro:float,err_tol:float
+        Tdt_ro:float,err_tol:float,
+        idx_set:int
         ) -> Tuple[List[Dict[str,Union[np.ndarray,np.ndarray,np.ndarray]]],List[torch.Tensor]]:
     """
     Generates rollout data for the quadcopter given a list of drones and initial states (perturbations).
@@ -301,6 +301,8 @@ def generate_rollouts(
         Frames:             List of drone configurations.
         Perturbations:      List of perturbed initial states.
         Tdt_ro:             Rollout duration.
+        err_tol:            Error tolerance.
+        idx_set:            Index of the rollout set.
 
     Returns:
         Trajectories:           List of trajectory rollouts.
@@ -310,7 +312,7 @@ def generate_rollouts(
     # Unpack the trajectory
     Tpi,CPi = ms.solve(course_config)
     obj = sh.ts_to_obj(Tpi,CPi)
-    tXUd = th.TS_to_tXU(Tpi,CPi,None,10)
+    tXd = th.TS_to_tXU(Tpi,CPi,None,10)
     
     # Initialize rollout variables
     Trajectories,Images = [],[]
@@ -329,19 +331,19 @@ def generate_rollouts(
         Tro,Xro,Uro,Iro,Fro,Tsol = sim.simulate(ctl,t0,tf,x0)
         
         # Check if the rollout data is useful
-        err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
+        err = np.min(np.linalg.norm(tXd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < err_tol:
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
-                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
-                "rollout_id":str(idx).zfill(5),
+                "tXd":tXd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
+                "rollout_id":str(idx_set).zfill(3)+str(idx).zfill(3),
                 "course":course_config["name"],
                 "frame":frame_config}
 
             images = {
                 "images":Iro,
-                "rollout_id":str(idx).zfill(5),"course":course_config["name"]
+                "rollout_id":str(idx_set).zfill(3)+str(idx).zfill(3),"course":course_config["name"]
             }
 
             # Store rollout data
@@ -356,7 +358,6 @@ def generate_rollouts(
 def save_rollouts(cohort_path:str,course_name:str,
                   Trajectories:List[Tuple[np.ndarray,np.ndarray,np.ndarray]],
                   Images:List[torch.Tensor],
-                  tXUd:np.ndarray,
                   stack_id:Union[str,int]) -> None:
     """
     Saves the rollout data to a .pt file in folders corresponding to coursename within the cohort 
@@ -368,7 +369,6 @@ def save_rollouts(cohort_path:str,course_name:str,
         course_name:    Name of the course.
         Trajectories:   Rollout data.
         Images:         Image data.
-        tXUd:           Ideal trajectory data.
         stack_id:       Stack id.
 
     Returns:
@@ -381,19 +381,12 @@ def save_rollouts(cohort_path:str,course_name:str,
         os.makedirs(rollout_course_path)
     
     # Save the stacks
-    Ndata = sum([trajectory["Ndata"] for trajectory in Trajectories])
-    data_set_name = str(stack_id).zfill(3) if type(stack_id) == int else str(stack_id)
-    trajectory_data_set_path = os.path.join(rollout_course_path,"trajectories"+data_set_name+".pt")
-    image_data_set_path = os.path.join(rollout_course_path,"images"+data_set_name+".pt")
+    dset_name = str(stack_id).zfill(3) if type(stack_id) == int else str(stack_id)
+    traj_path = os.path.join(rollout_course_path,"trajectories"+dset_name+".pt")
+    imgs_path = os.path.join(rollout_course_path,"images"+dset_name+".pt")
 
     # Compress the image data
     Images = sh.compress_data(Images)
 
-    trajectory_data_set = {"data":Trajectories,
-                           "tXUd":tXUd,
-                            "set":data_set_name,"Ndata":Ndata,"course":course_name}
-    image_data_set = {"data":Images,
-                        "set":data_set_name,"Ndata":Ndata,"course":course_name}
-
-    torch.save(trajectory_data_set,trajectory_data_set_path)
-    torch.save(image_data_set,image_data_set_path)
+    torch.save(Trajectories,traj_path)
+    torch.save(Images,imgs_path)

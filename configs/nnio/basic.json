@@ -1,11 +1,14 @@
 {
     "objective": [
+        [
             "dpx", "dpy", "dpz",
             "vxi", "vyi", "vzi",
             "qxi", "qyi", "qzi", "qwi",
             "vxf", "vyf", "vzf",
             "qxf", "qyf", "qzf", "qwf",
             "T"
+        ]
+            
     ],
     "current": [
         [
@@ -16,15 +19,10 @@
         ]
     ],
     "command": [
-        [
-            "nf","wx","wy","wz"
-        ]
+        [ "nf","wx","wy","wz" ]
     ],
     "parameters": [
-        [
-            "m",
-            "kt"
-        ]
+        [ "m","kt" ]
     ],
     "histLat": [
         [null]

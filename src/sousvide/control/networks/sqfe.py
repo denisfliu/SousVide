@@ -34,15 +34,17 @@ class SqFE(BaseNet):
             fpass_indices:  Indices of the forward-pass output.
             label_indices:  Indices of the label output.
             networks:       List of neural networks.
+
+            Nznn:           Feature extractor flag with size as value.
         """
 
         # Initialize the parent class
         super(SqFE, self).__init__()
 
         # Extract the configs
-        input_indices = nh.get_io_indices(inputs)
-        fpass_indices = nh.get_io_indices(outputs)
-        label_indices = nh.get_io_indices(outputs)
+        input_indices = nh.get_io_idxs(inputs)
+        fpass_indices = nh.get_io_idxs(outputs)
+        label_indices = nh.get_io_idxs(outputs)
 
         Ncr =  len(input_indices["current"][-1])
         hidden_sizes = layers["hidden_sizes"]
@@ -61,13 +63,15 @@ class SqFE(BaseNet):
             networks["mlp0"] = MLP(Nsq,hidden_sizes[:augment_layer-1],hidden_sizes[augment_layer-1],dropout)
             networks["mlp1"] = MLP(hidden_sizes[augment_layer-1]+Ncr,hidden_sizes[augment_layer:],output_size)
         
-        # Define the model
+        # Define the model        
         self.network_type = network_type
         self.input_indices = input_indices
         self.fpass_indices = fpass_indices
         self.label_indices = label_indices
         self.networks = networks
         
+        self.Nznn = output_size
+
     def forward(self, xnn_im:torch.Tensor, xnn_cr:torch.Tensor) ->  torch.Tensor:
         """
         Forward pass of the model.

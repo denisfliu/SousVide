@@ -28,16 +28,18 @@ class SIFU(BaseNet):
             fpass_indices:  Indices of the forward-pass output.
             label_indices:  Indices of the label output.
             networks:       Network layers.
+
             use_fpass:      Use feature forward-pass.
+            frame_len:      Frame length flag with size as value.
         """
 
         # Initialize the parent class
         super(SIFU, self).__init__()
 
         # Extract the configs
-        input_indices = nh.get_io_indices(inputs)
-        fpass_indices = nh.get_io_indices(outputs["fpass"])
-        label_indices = nh.get_io_indices(outputs["label"])
+        input_indices = nh.get_io_idxs(inputs)
+        fpass_indices = nh.get_io_idxs(outputs["fpass"])
+        label_indices = nh.get_io_idxs(outputs["label"])
 
         prev_size = nh.get_io_size(input_indices)
         hidden_sizes = layers["hidden_sizes"] + [layers["histLat_size"]]
@@ -60,7 +62,9 @@ class SIFU(BaseNet):
         self.fpass_indices = fpass_indices
         self.label_indices = label_indices
         self.networks = nn.Sequential(*networks)
+        
         self.use_fpass = True
+        self.nhy = len(inputs["history"][0])
 
     def forward(self, xnn:torch.Tensor) -> torch.Tensor:
         """

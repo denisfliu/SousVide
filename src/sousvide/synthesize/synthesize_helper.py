@@ -46,27 +46,6 @@ def tXU_to_obj(tXU:np.ndarray) -> np.ndarray:
 
     return obj
 
-def update_output_dict(
-        outputs:Dict[str,List[torch.Tensor]],
-        labels:Dict[str,torch.Tensor]) -> torch.Tensor:
-    """
-    Inplace updates the input/output dictionary with the labels dictionary.
-
-    Args:
-        outputs:        Outputs dictionary
-        label:    Labels dictionary.
-    """
-
-    label = []
-    for key,value in outputs.items():
-        if key in labels.keys():
-            label.append(labels[key][value])
-
-    outputs = torch.hstack(label)
-    
-    return outputs
-
-
 def decompress_data(image_dict:Dict[str,Union[str,np.ndarray]]) -> Dict[str,Union[str,np.ndarray]]:
     """
     We apply a compression if the images are too large to be saved in the .pt file. This function

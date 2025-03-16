@@ -1,5 +1,4 @@
 {
-    "type": "SVNet_v1",
     "networks": {
         "histNet": {
             "network_type": "sifu",

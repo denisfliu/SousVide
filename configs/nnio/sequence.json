@@ -1,11 +1,6 @@
 {
-    "rgb_image": [
-        [null],
-        [null],
-        ["r", "g", "b"]
-    ],
     "history": [
-        [null],
+        [ null ],
         [
             "dt",
             "px","py","pz",
@@ -15,13 +10,15 @@
         ]
     ],
     "features": [
-        [null],
-        [null]
+        [ null ],
+        [ null ]
     ],
     "forces": [
-        [null],
-        [
-            "fx","fy","fz"
-        ]
+        [ null ],
+        [ "fx","fy","fz" ]
+    ],
+    "command_set": [
+        [ null ],
+        [ "nf","wx","wy","wz" ]
     ]
 }
