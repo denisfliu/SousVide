@@ -1,14 +1,14 @@
 import numpy as np
 import os
 import torch
-
-from typing import Dict,Union,List
-
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.control.network_helper as nh
 
+from typing import Dict,Union,List,Tuple
 from sousvide.control.pilot import Pilot
-
+from rich.console import Console
+from rich.progress import Progress
+import time
 def generate_observation_data(cohort:str,roster:List[str],subsample:float=1.0):
     """
     Takes rollout data and generates observations for each pilot in the cohort. The observations are
@@ -16,68 +16,106 @@ def generate_observation_data(cohort:str,roster:List[str],subsample:float=1.0):
     to a .pt file in the pilot's directory.
 
     """
-    
-    # Generate some useful paths
+
+    # Initialize Console
+    console = Console()
+
+    # Generate some useful intermediate variables
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path,"cohorts",cohort)
     rollout_folder_path = os.path.join(cohort_path,"rollout_data")
 
-    # Initialize Pilots
-    Pilots = [Pilot(cohort,name) for name in roster]
+    courses = [folder for folder in os.listdir(rollout_folder_path)]
+    Nds = sum([1 for course in courses for file in os.listdir(os.path.join(rollout_folder_path, course)) if file.startswith("trajectories")])
+    Ncs = len(courses)
     
-    print("==========================================================================================")
+    # Preface Message
+    console.print(f"Generating observation data with subsample ratio {subsample} for...\n",
+                  f"Cohort: {cohort}\n",
+                  f"Roster: {roster}\n",
+                  f"Courses: {courses}")
 
-    for pilot in Pilots:
-        # Print some useful information
-        print(f"Pilot Name  : {pilot.name}")
-        print(f"Augmentation: {pilot.da_cfg['mean']}")
-        print( "            :                        +/-")
-        print(f"            : {pilot.da_cfg['std']}")
-        print(f"Subsample   : 1 in {int(1/subsample)}")
-        print("------------------------------------------------------------------------------------------")
+    with Progress() as progress:
+        # Initialize PTasks
+        roster_tasks = {}
+        dataset_task = progress.add_task("Extracting Observations from File...")
 
-        # Get Course Folders
-        courses = [folder for folder in os.listdir(rollout_folder_path)]
-        
-        Ndata = 0
-        for course in courses:
-            # Load Trajectory Data
-            rollout_data_path = os.path.join(rollout_folder_path,course)
-            trajectory_data_files = sorted([
-                file for file in os.listdir(rollout_data_path)
-                if file.startswith("trajectories") and file.endswith(".pt")])
-            image_data_files = sorted([
-                file for file in os.listdir(rollout_data_path)
-                if file.startswith("images") and file.endswith(".pt")])
+        for student in roster:
+            # Load the Pilot
+            pilot = Pilot(cohort,student)
+            networks = list(pilot.policy.networks.keys())
             
-            # Generate Observation Data
-            for idx,(traj_data_file,imgs_data_file) in enumerate(zip(trajectory_data_files,image_data_files)):
-                # Load the Data
-                traj_data_set = torch.load(os.path.join(rollout_data_path,traj_data_file))
-                imgs_data_set = torch.load(os.path.join(rollout_data_path,imgs_data_file))
-                
-                # Extract the Observations
-                observations,Nobs = generate_observations(pilot,traj_data_set,imgs_data_set,subsample)
-                Ndata += Nobs
+            # Add student to PTask
+            roster_tasks[student] = progress.add_task(
+                    f"[bold cyan]{student}[/bold cyan]: {networks}\n"
+                    f"Ndata: 0 | Course: 0/{len(courses)} | File: 0/{Nds}",
+                    total=Nds
+            )
 
-                # Save the observations
-                save_observations(cohort_path,course,pilot.name,observations,idx)
+            Ndata = 0
+            for idx_cs,course in enumerate(courses):
+                # Load Trajectory Data
+                rollout_data_path = os.path.join(rollout_folder_path,course)
+                trajectory_data_files = sorted([
+                    file for file in os.listdir(rollout_data_path)
+                    if file.startswith("trajectories") and file.endswith(".pt")])
+                image_data_files = sorted([
+                    file for file in os.listdir(rollout_data_path)
+                    if file.startswith("images") and file.endswith(".pt")])
 
-        print("Data Counts ------------------------------------------------------------------------------")
-        print("Extracted",Ndata,"observations from",len(courses),"course(s).")
-        print("------------------------------------------------------------------------------------------")
+                # Generate Observation Data
+                Nds = len(trajectory_data_files)
+                for idx_ds,(traj_data_file,imgs_data_file) in enumerate(zip(trajectory_data_files,image_data_files)):
+                    # Load the Data
+                    traj_dataset = torch.load(os.path.join(rollout_data_path,traj_data_file))
+                    imgs_dataset = torch.load(os.path.join(rollout_data_path,imgs_data_file))
 
-    print("==========================================================================================")
+                    # Reset the Dataset PTask and pack it for observation generation tracking
+                    progress.reset(dataset_task, total=len(traj_dataset))         # Reset for new course
+                    progress_bar = (progress,dataset_task)
 
+                    # Extract the Observations
+                    observations,Nobs = generate_observations(pilot,
+                                                              traj_dataset,imgs_dataset,
+                                                              subsample,progress_bar)
+                    Ndata += Nobs
+
+                    # Save the observations
+                    save_observations(cohort_path,course,pilot.name,observations,idx_ds)
+
+                    # Update the PTasks
+                    progress.update(
+                        roster_tasks[student], 
+                        advance=1, 
+                        description=(
+                            f"[bold cyan]{student}[/bold cyan]: {networks}\n"
+                            f"Ndata: {Ndata} | Course: {idx_cs}/{Ncs} | File: {idx_ds+1}/{Nds}"
+                        )
+                    )
+
+                # Update the roster progress
+                progress.update(
+                    roster_tasks[student], 
+                    description=(
+                        f"[bold cyan]{student}[/bold cyan]: {networks}\n"
+                        f"Ndata: {Ndata} | Course: {idx_cs+1}/{Ncs} | File: {idx_ds+1}/{Nds}"
+                    )
+                )    
+
+            # Cap off progress update
+            progress.refresh()
 
 def generate_observations(pilot:Pilot,
                           traj_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
                           imgs_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
-                          subsample:float=1) -> Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]]:
+                          subsample:float=1,progress_bar:Tuple[Progress,int]=None) -> Tuple[Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],int]:
     
     # Initialize the observation data dictionary
     Observations = []
+
+    # Unpack the progress bar
+    progress,task_id = progress_bar
 
     # Unpack augmenteation variables
     aug_type = np.array(pilot.da_cfg["type"])
@@ -87,7 +125,6 @@ def generate_observations(pilot:Pilot,
     # Set subsample step
     nss = int(1/subsample)
 
-    # Generate observations
     Nobs = 0
     for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
@@ -97,7 +134,7 @@ def generate_observations(pilot:Pilot,
         rollout_id,course = traj_data["rollout_id"],traj_data["course"]
         frame = traj_data["frame"]
         params = [frame["mass"],frame["force_normalized"]]
-      
+    
         # Decompress and extract the image data
         Imgs = sh.decompress_data(imgs_data)["images"]
 
@@ -108,7 +145,6 @@ def generate_observations(pilot:Pilot,
         if height == 224 and width == 224:
             Imgs = np.transpose(Imgs, (0, 3, 1, 2))
 
-        # Create Observation Data
         Xnn,Ynn = [],[]
         unn_pr = np.zeros(4)
         znn_cr = {key: torch.zeros(pilot.policy.Nznn[key]) for key in pilot.policy.Nznn.keys()}
@@ -141,10 +177,7 @@ def generate_observations(pilot:Pilot,
             # Extract the labels from source and trim inputs if they don't exist
             ynn_cr = {}
             for xnn_key in xnn_cr.keys():
-                if xnn_key == "all":
-                    ynn_idxs = pilot.policy.label_indices
-                else:
-                    ynn_idxs = pilot.policy.networks[xnn_key].label_indices
+                ynn_idxs = pilot.policy.networks[xnn_key].label_indices
 
                 try:
                     ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,use_tensor=True)
@@ -159,6 +192,10 @@ def generate_observations(pilot:Pilot,
             # Loop updates
             unn_pr = unn_cr
 
+        # Update the progress bar if it exists
+        if progress_bar is not None:
+            progress.update(task_id, advance=1)
+
         # Store the observation data
         observations = {
             "Xnn":Xnn,
@@ -169,7 +206,7 @@ def generate_observations(pilot:Pilot,
         }
         Observations.append(observations)
 
-        # Update the observation count
+        # Update the counters
         Nobs += len(Xnn)
 
     return Observations,Nobs

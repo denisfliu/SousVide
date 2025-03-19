@@ -12,6 +12,7 @@ from sousvide.control.networks.sift import SIFT
 from sousvide.control.networks.sqfe import SqFE
 from sousvide.control.networks.hpcn import HPCN
 from sousvide.control.networks.svcn import SVCN
+from sousvide.control.networks.svnet import SVNet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -59,6 +60,9 @@ def generate_network(
             network = SVCN(**net_config)
         elif network_type == "hpcn":
             network = HPCN(**net_config)
+        elif network_type == "svnet":
+            network = SVNet(**net_config)
+        # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")
     

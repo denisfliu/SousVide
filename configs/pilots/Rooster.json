@@ -23,46 +23,32 @@
                 }
             },
             "layers": {
-                "d_model": 16,
-                "d_ff": 64,
+                "d_model": 8,
+                "d_ff": 32,
                 "num_heads": 4,
                 "num_layers": 3
             }
         },
-        "featNet": {
-            "network_type": "sqfe",
+        "commNet": {
+            "network_type": "svnet",
             "inputs": {
                 "rgb_image": [
                     ["all"], ["all"], ["r", "g", "b"]
                 ],
-                "current": [
+                "current1": [
                     [
                         "pz",
                         "qx", "qy", "qz", "qw"
                     ]
-                ]
-            },
-            "outputs": {
-                "featLat":  [ ["all"] ]
-            },
-            "layers": {
-                "hidden_sizes": [512, 256],
-                "featLat_size": 128,
-                "augment_layer": 0
-            }
-        },
-        "commNet": {
-            "network_type": "svcn",
-            "inputs": {
-                "current": [
+                ],
+                "current2": [
                     [
                         "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ ["all"] ],
-                "featLat": [ ["all"] ]
+                "histLat": [ ["all"] ]
             },
             "outputs": {
                 "command": [
@@ -70,9 +56,9 @@
                 ]
             },
             "layers": {
-                "hidden_sizes": [100, 100],
-                "histLat_size": 16,
-                "featLat_size": 128
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2,
+                "histLat_size":  8
             }
         }
     },

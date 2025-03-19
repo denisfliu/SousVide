@@ -1,38 +1,41 @@
-import numpy as np
-import json
 import os
 import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader,Dataset
+import sousvide.synthesize.observation_generator as og
+
+from torch.utils.data import DataLoader
 from tqdm.notebook import trange
 from sousvide.control.pilot import Pilot
 from sousvide.control.policy import Policy
+from sousvide.control.networks.base_net import BaseNet
 from sousvide.instruct.synthesized_data import *
-from typing import List,Tuple,Literal
-from enum import Enum
+from typing import List
+from rich.console import Console
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
+
+# Initialize Console
+console = Console()
 
 def train_roster(cohort_name:str,roster:List[str],
-                 syllabus:Dict[str,Dict[str,Union[List[str],int]]],
-                 lim_sv:int,
-                 lr:float=1e-4,batch_size:int=64):
+                 network_name:str,Neps:int,regen_data:bool=False,
+                 lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
     
-    print("==========================================================================")
+    # Regenerate observation data
+    if regen_data:
+        console.print("Regenerating observation data...")
+        og.generate_observation_data(cohort_name,roster)
+    else:
+        console.print("Using existing observation data...")
+
     for student_name in roster:
-        print("Training Student: ",student_name)
-        for topic_id,topic in syllabus.items():
-            status = train_student(cohort_name,student_name,topic_id,topic,lim_sv,lr,batch_size)
-            if not status:
-                print(f"{topic_id} does not apply to {student_name}")
-            else:
-                print(f"{topic_id} completed by {student_name}")
-        print("--------------------------------------------------------------------------")
-    print("==========================================================================")
+        # Train the student
+        train_student(cohort_name,student_name,network_name,Neps,lim_sv,lr,batch_size)
 
 def train_student(cohort_name:str,student_name:str,
-                  topic_id:str,topic:Dict[str,Union[List[str],str,int]],
-                  lim_sv:int,lr:float,batch_size:int):
+                  network_name:str,Neps:int,
+                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
 
     # Pytorch Config
     use_cuda = torch.cuda.is_available()
@@ -42,22 +45,21 @@ def train_student(cohort_name:str,student_name:str,
     # Load the student
     student = Pilot(cohort_name,student_name)
 
-    # Extract variables using syllabus
-    net_active = get_networks(student.policy,topic["active"],False)
-    nets_update = get_networks(student.policy,topic["update"],True)    
-    Neps = topic["Neps"]
+    # Extract network if it exists
+    if network_name not in student.policy.networks:
+        console.print(f"Network {network_name} not found in student {student_name}.")
+        return
+    else:
+        network:BaseNet = get_network(student.policy,network_name)    
 
-    # Exit if syllabus does not apply to student
-    if (net_active is None) or (nets_update is None):
-        return False
-    
     # Set parameters to optimize over
-    opt = optim.Adam(nets_update.parameters(),lr=lr)
+    opt = optim.Adam(network.parameters(),lr=lr)
 
     # Some Useful Paths
     student_path = student.path
-    losses_path  = os.path.join(student_path,"losses_"+topic_id+".pt")
-    
+    losses_path  = os.path.join(student_path,"losses_"+network_name+".pt")
+    network_path = os.path.join(student_path,network_name+".pt")
+
     # Load loss log if it exists
     if os.path.exists(losses_path):
         prev_losses_log = torch.load(losses_path)
@@ -66,7 +68,7 @@ def train_student(cohort_name:str,student_name:str,
 
     # Initialize the loss entry
     loss_entry = {
-        "active": topic["active"], "update": topic["update"],
+        "network": network_name,
         "N_eps": None, "Nd_tn": None, "Nd_tt": None, "t_tn": None,
         "Loss_tn": [], "Loss_tt": []
     }
@@ -76,10 +78,19 @@ def train_student(cohort_name:str,student_name:str,
 
     # Training + Testing Loop
     Loss_tn,Loss_tt = [],[]
-    with trange(Neps) as eps:
-        for ep in eps:
+    with Progress(
+        TextColumn("[bold cyan]Maverick > {network_name}[/bold cyan] | Epoch {task.completed}/{task.total}"),
+        BarColumn(),
+        TextColumn("Loss: [bold yellow]{task.fields[loss]:.4f}[/bold yellow]"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        # Initialize PTask
+        epoch_task = progress.add_task("Training...", total=Neps, loss=0.0)
+
+        for ep in range(Neps):
             # Get Observation Data Files (Paths)
-            od_train_files,od_test_files = get_data_paths(cohort_name,student.name,topic["active"])
+            od_train_files,od_test_files = get_data_paths(cohort_name,student.name,network_name)
 
             # Training
             epLosses_tn,Ndata_tn = [],0
@@ -91,7 +102,7 @@ def train_student(cohort_name:str,student_name:str,
                 # Training
                 for input,label in dataloader:
                     # Forward Pass
-                    prediction = net_active(*input)
+                    prediction = network(*input)
                     loss = criterion(prediction,label)
 
                     # Backward Pass
@@ -113,7 +124,7 @@ def train_student(cohort_name:str,student_name:str,
                 # Testing
                 for input,label in dataloader:
                     # Forward Pass
-                    prediction = net_active(*input)
+                    prediction = network(*input)
                     loss = criterion(prediction,label)
 
                     # Save loss logs
@@ -126,7 +137,8 @@ def train_student(cohort_name:str,student_name:str,
             Loss_tn.append(epLoss_tn)
             Loss_tt.append(epLoss_tt)
             
-            eps.set_description('Training Loss %f' % epLoss_tn)
+            # Update Progress
+            progress.update(epoch_task,advance=1,loss=epLoss_tn)
 
             # Save at intermediate steps and at the end
             if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
@@ -134,9 +146,7 @@ def train_student(cohort_name:str,student_name:str,
                 end_time = time.time()
                 t_train = end_time - start_time
 
-                for net_name,network in nets_update.items():
-                    network_path = os.path.join(student_path,net_name+".pt")
-                    torch.save(network,network_path)
+                torch.save(network,network_path)
 
                 loss_entry["Loss_tn"] = Loss_tn
                 loss_entry["Loss_tt"] = Loss_tt
@@ -153,56 +163,31 @@ def train_student(cohort_name:str,student_name:str,
                 curr_losses_log[log_name] = loss_entry
                 
                 torch.save(curr_losses_log,losses_path)
-    
-    return True
 
-def get_networks(policy:Policy,net_names:Union[str,List[str]],is_update:bool):
+        # Cap off progress update
+        progress.refresh()
+
+def get_network(policy:Policy,net_name:Union[str,List[str]]) -> BaseNet:
     """
     Get the networks based on the list of network names.
 
     Args:
         policy:     The policy object.
-        net_names:  The list of network names or a single network name.
-        is_update:  If true, the networks are updated.
+        net_name:   The list of network names or a single network name.
 
     Returns:
-        networks:   The list of networks or a single network.
+        network:    The target network.
     """
 
-    # Ensure net_names is a list
-    single_net = False
-    if isinstance(net_names, str):
-        net_names = [net_names]
-        single_net = True
-
-    # Extract the networks
-    networks = nn.ModuleDict()
-    for net_name in net_names:
-        # Catch the all case
-        if net_name == "all":
-            network = policy
-        elif net_name in policy.networks:
-            network = policy.networks[net_name]
-        else:
-            return None
-        
-        # Switch from network forward pass to label pass (if it exists)
-        network.use_fpass = False
-
-        # Lock/Unlock the networks
-        if is_update:
-            network.train()
-            for param in network.parameters():
-                param.requires_grad = True
-        else:
-            network.eval()
-            for param in network.parameters():
-                param.requires_grad = False
-
-        # Add the network to the list
-        networks[net_name] = network
-
-    if single_net:
-        return networks[net_names[0]]
+    # Get the network
+    network = policy.networks[net_name]
     
-    return networks
+    # Switch from network forward pass to label pass (if it exists)
+    network.use_fpass = False
+
+    # Lock/Unlock the network
+    network.train()
+    for param in network.parameters():
+        param.requires_grad = True
+    
+    return network

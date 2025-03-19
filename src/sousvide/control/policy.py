@@ -86,7 +86,7 @@ class Policy(BaseNet):
 
         # Initialize the function outputs
         ynn,znn = torch.zeros(4),{}
-        xnn_dict = {"all": nh.extract_io(xnn_srcs,None)}
+        xnn_dict = {}
 
         # Forward Pass through the networks
         for net_name,network in self.networks.items():

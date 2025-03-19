@@ -103,7 +103,12 @@ def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,Lis
     # Extract the indices
     io_idxs = {}
     for io,config in io_cfgs.items():
-        refr = io_refr[io][-1]
+        # Extract the reference (accounting for numbered io)
+        if io[-1].isdigit():
+            refr = io_refr[io[:-1]][-1]
+        else:
+            refr = io_refr[io][-1]
+
         sequences,channels = config[:-1],config[-1]
 
         idxs = []
@@ -140,7 +145,6 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
         io_dict:    Input/Output dictionary tensor.
         io_idxs:    Dictionary of indices of the inputs/outputs.
         
-
     Returns:
         xnn:        List/tensor of extracted inputs.
     """
@@ -151,7 +155,11 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
         xnn = list(io_srcs.values())
     else:
         xnn = []
-        for name,idxs in io_idxs.items():            
+        for name,idxs in io_idxs.items():
+            # Remove last letter of the name if it is a number
+            if name[-1].isdigit():
+                name = name[:-1]
+
             # Extract the input/output tensor
             data = io_srcs[name]
             for dim, idx in enumerate(idxs):

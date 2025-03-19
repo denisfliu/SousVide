@@ -17,7 +17,8 @@ from figs.dynamics.model_specifications import generate_specifications
 
 def generate_rollout_data(cohort_name:str,method_name:str,
                           flights:List[Tuple[str,str]],
-                          Nro_sv:int=50,rollout_forced:str=None):
+                          expert_name:str="vrmpc_fr",frame_name:str="carl",
+                          Nro_sv:int=50):
     
     """
     Generates flight data for a given cohort. A cohort comprises a set of courses flown on a specific
@@ -29,6 +30,8 @@ def generate_rollout_data(cohort_name:str,method_name:str,
         cohort_name:    Cohort name.
         method_name:    Sous Vide config.
         flights:        List of flights (scene,frame,course).
+        expert_name:    Expert pilot name (usually a vrmpc).
+        frame_name:     Quadcopter frame name.
         Nro_sv:         Number of rollouts per save.
 
     Returns:
@@ -45,33 +48,19 @@ def generate_rollout_data(cohort_name:str,method_name:str,
     with open(method_path) as json_file:
         method_config = json.load(json_file)
     
-    sample_set_config = method_config["sample_set"]
-    trajectory_set_config = method_config["trajectory_set"]
-    frame_set_config = method_config["frame_set"]
+    # Randomization Boundaries
+    parameters_bounds = method_config["randomization"]["parameters"]
+    initial_bounds = method_config["randomization"]["initial"]
 
-    Tdt_ro = sample_set_config["duration"]
-    Nro_tp = sample_set_config["reps"]
-    Ntp_sc = sample_set_config["rate"]
-    err_tol = sample_set_config["tolerance"]
-    policy_name = sample_set_config["policy"]
-    frame_name = sample_set_config["frame"]
-
-    if rollout_forced is None:
-        rollout_name = sample_set_config["rollout"]
-    else:
-        rollout_name = rollout_forced
-
-    # Extract policy and frame
-    policy_path = os.path.join(workspace_path,"configs","policy",policy_name+".json")
+    # Extract expert and frame configs
+    expert_path = os.path.join(workspace_path,"configs","pilots",expert_name+".json")
     frame_path  = os.path.join(workspace_path,"configs","frame",frame_name+".json")
     
-    with open(policy_path) as json_file:
-        policy_config = json.load(json_file)
+    with open(expert_path) as json_file:
+        expert_config = json.load(json_file)
 
     with open(frame_path) as json_file:
         base_frame_config = json.load(json_file)   
-
-    hz_ctl = policy_config["hz"]
 
     # Create cohort folder
     cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
@@ -79,14 +68,11 @@ def generate_rollout_data(cohort_name:str,method_name:str,
     if not os.path.exists(cohort_path):
         os.makedirs(cohort_path)
 
-    # Generate base drone specifications
-    base_frame_specs = generate_specifications(base_frame_config)
-
     # Print some useful information
     print("==========================================================================")
     print("Cohort :",cohort_name)
     print("Method :",method_name)
-    print("Policy :",policy_name)
+    print("Expert :",expert_name)
     print("Frame  :",frame_name)
     print("Flights:",flights)
 
@@ -107,20 +93,31 @@ def generate_rollout_data(cohort_name:str,method_name:str,
             Tpd,CPd = output
         else:
             raise ValueError("Desired trajectory not feasible. Aborting.")
-        
+
+        # Extract relevant method variables
+        rollout_config = method_config["rollout"]
+        Tdt_ro = method_config["duration"] or Tpd[-1]
+        Ntp_sc = method_config["rate"] or 1/Tdt_ro
+        Nro_tp = method_config["reps"] or 1
+        tol_select = method_config["tol_select"] or 1e9
+        hz_ctl = expert_config["hz"]
+
         # Generate simulator
-        simulator = Simulator(scene_name,rollout_name)
+        simulator = Simulator(scene_name,rollout_config)
         
         # Generate Sample Set Batches
-        Ntp = Ntp_sc*int(Tpd[-1])                                       # Number of time points per trajectory
-        Nsp = Nro_tp*Ntp                                                # Number of sample points (total)
-        
-        Tsp = np.tile(np.linspace(Tpd[0],Tpd[-1],Ntp+1)[:-1],Nro_tp)    # Entire sample points array
-        Tsp += np.random.uniform(-1/Ntp_sc,1/Ntp_sc,Nsp)                # Add some noise to the sample points array
-        Tsp = np.clip(Tsp,Tpd[0],Tpd[-1])                               # Clip the sample points array
-        np.random.shuffle(Tsp)                                          # Shuffle the sample points array
+        Ntp = int(Ntp_sc*Tpd[-1])                                           # Number of time points per trajectory
+        Nsp = int(Nro_tp*Ntp)                                               # Number of sample points (total)
 
-        TTsp = np.split(Tsp,np.arange(Nro_sv,Nsp,Nro_sv))               # Split the sample points array into their batches
+        if method_config["duration"] is None:
+            Tsp = np.array([Tpd[0]])
+        else:
+            Tsp = np.tile(np.linspace(Tpd[0],Tpd[-1],Ntp+1)[:-1],Nro_tp)    # Entire sample points array
+            Tsp += np.random.uniform(-1/Ntp_sc,1/Ntp_sc,Nsp)                # Add some noise to the sample points array
+            Tsp = np.clip(Tsp,Tpd[0],Tpd[-1])                               # Clip the sample points array
+        np.random.shuffle(Tsp)                                              # Shuffle the sample points array
+
+        TTsp = np.split(Tsp,np.arange(Nro_sv,Nsp,Nro_sv))                   # Split the sample points array into their batches
         
         # Print some diagnostics
         Ndc = int(Tdt_ro*hz_ctl)
@@ -128,7 +125,7 @@ def generate_rollout_data(cohort_name:str,method_name:str,
         print("--------------------------------------------------------------------------")
         print("Course Name :",course_name)
         print("Rollout Reps:",Nro_tp,"(per time point)")
-        print("Rollout Rate:",Ntp_sc,"(per second)")
+        print("Rollout Rate:",np.around(Ntp_sc,3),"(per second)")
         print("Rollout Data:",Ndc,"(per sample)")
         print("--------------------------------------------------------------------------")
         print("Total Rollouts:",Nsp)
@@ -143,15 +140,15 @@ def generate_rollout_data(cohort_name:str,method_name:str,
             Tsp = TTsp[idx]
             
             # Generate sample frames
-            Frames = generate_frames(Tsp,base_frame_config,frame_set_config)
+            Frames = generate_frames(Tsp,base_frame_config,parameters_bounds)
 
             # Generate sample perturbations
-            Perturbations  = generate_perturbations(Tsp,Tpd,CPd,trajectory_set_config)
+            Perturbations  = generate_perturbations(Tsp,Tpd,CPd,initial_bounds)
 
             # Generate rollout data
             Trajectories,Images = generate_rollouts(
-                simulator,course_config,policy_config,
-                Frames,Perturbations,Tdt_ro,err_tol,idx)
+                simulator,course_config,expert_config,
+                Frames,Perturbations,Tdt_ro,tol_select,idx)
 
             # Save the rollout data
             save_rollouts(cohort_path,course_name,Trajectories,Images,idx)
@@ -166,7 +163,7 @@ def generate_rollout_data(cohort_name:str,method_name:str,
 
 def generate_frames(Tsps:np.ndarray,
                     base_frame_config:Dict[str,Union[int,float,List[float]]],
-                    frame_set_config:Dict[str,Union[float,List[float]]],
+                    parameters_bounds:List[float],
                     rng_seed:Union[int,None]=None) -> List[Dict[str,Union[np.ndarray,str,int,float]]]:
     
     """
@@ -175,14 +172,17 @@ def generate_frames(Tsps:np.ndarray,
     configurations generated is determined by the sample set config dictionary.
 
     Args:
-        Tsps:                   Sample times.
-        base_frame_config:      Base frame configuration dictionary.
-        frame_set_config:       Frame sample set config dictionary.
-        rng_seed:               Random number generator seed.
+        Tsps:               Sample times.
+        base_frame_config:  Base frame configuration dictionary.
+        parameters_bounds:  Frame sample set config dictionary.
+        rng_seed:           Random number generator seed.
 
     Returns:
-        Drones:                 List of drone configurations (dictionary format).
+        Drones:             List of drone configurations (dictionary format).
     """
+
+    # TODO: Generalize this to nnio config
+    parameters_key = ["mass","force_normalized"]
 
     # Sample Count
     Nsps = len(Tsps)
@@ -191,17 +191,6 @@ def generate_frames(Tsps:np.ndarray,
     if rng_seed is not None:
         np.random.seed(rng_seed)
 
-    # Get frame items that will be randomized
-    Items = {}
-    for key in frame_set_config.keys():
-        if key not in base_frame_config.keys():
-            raise ValueError(f"Key '{key}' not found in base frame config.")
-        else:
-            value = np.array(base_frame_config[key])
-            bound = np.array(frame_set_config[key])
-
-            Items[key] = [value*(1-bound),value*(1+bound)]
-
     # Generate Drone Frames
     Frames = []
     for _ in range(Nsps):
@@ -209,8 +198,9 @@ def generate_frames(Tsps:np.ndarray,
         frame = copy.deepcopy(base_frame_config)
 
         # Randomize the frame
-        for key in Items.keys():
-            frame[key] = np.random.uniform(*Items[key])
+        for idx,key in enumerate(parameters_key):
+            bounds = [-parameters_bounds[idx],parameters_bounds[idx]]
+            frame[key] += np.random.uniform(*bounds)
 
         # Save to a dictionary
         Frames.append(frame)
@@ -219,7 +209,7 @@ def generate_frames(Tsps:np.ndarray,
 
 def generate_perturbations(Tsps:np.ndarray,
                            Tpd:np.ndarray,CPd:np.ndarray,
-                           trajectory_set_config:Dict[str,Union[int,bool]],
+                           initial_bounds:List[float],
                            rng_seed:int=None) -> List[Dict[str,Union[float,np.ndarray]]]:
     """
     Generates a list of perturbed initial states for the drone given an ideal trajectory. The perturbed
@@ -230,9 +220,9 @@ def generate_perturbations(Tsps:np.ndarray,
 
     Args:
         Tsps:                   Sample times.
-        Tpi:                    Ideal trajectory times.
-        CPi:                    Ideal trajectory control points.
-        trajectory_set_config:  Trajectory set config dictionary.
+        Tpd:                    Ideal trajectory times.
+        CPd:                    Ideal trajectory control points.
+        initial_bounds:         Initial state bounds.
         rng_seed:               Random number generator seed.
 
     Returns:
@@ -247,8 +237,8 @@ def generate_perturbations(Tsps:np.ndarray,
         np.random.seed(rng_seed)
     
     # Unpack the config
-    w_x0 = np.array(trajectory_set_config["initial"],dtype=float)
-    
+    w_x0 = np.array(initial_bounds,dtype=float)
+
     # Get ideal trajectory for quaternion checking
     tXUd = th.TS_to_tXU(Tpd,CPd,None,10)
 
@@ -264,7 +254,7 @@ def generate_perturbations(Tsps:np.ndarray,
         x0s = th.ts_to_xu(t0-t00,t0f-t00,CPd[idx0,:,:],None)
         
         # Perturb state vector sample
-        w0 = np.random.uniform(w_x0[0,:],w_x0[1,:])
+        w0 = np.random.uniform(-w_x0,w_x0)
         x0 = x0s + w0
         
         # Ensure quaternion is well-behaved (magnitude and closest to previous)
@@ -283,7 +273,7 @@ def generate_rollouts(
         policy_config:Dict[str,Union[int,float,List[float]]],
         Frames:Dict[str,Union[np.ndarray,str,int,float]],
         Perturbations:Dict[str,Union[float,np.ndarray]],
-        Tdt_ro:float,err_tol:float,
+        Tdt_ro:float,tol_select:float,
         idx_set:int
         ) -> Tuple[List[Dict[str,Union[np.ndarray,np.ndarray,np.ndarray]]],List[torch.Tensor]]:
     """
@@ -295,18 +285,18 @@ def generate_rollouts(
     state in the trajectory data. The image data consists of the image data and the data count.
 
     Args:
-        simulator:          Simulator object.
-        course_config:      Course configuration dictionary.
-        policy_config:      Policy configuration dictionary.
-        Frames:             List of drone configurations.
-        Perturbations:      List of perturbed initial states.
-        Tdt_ro:             Rollout duration.
-        err_tol:            Error tolerance.
-        idx_set:            Index of the rollout set.
+        simulator:      Simulator object.
+        course_config:  Course configuration dictionary.
+        policy_config:  Policy configuration dictionary.
+        Frames:         List of drone configurations.
+        Perturbations:  List of perturbed initial states.
+        Tdt_ro:         Rollout duration.
+        tol_select:     Error tolerance.
+        idx_set:        Index of the rollout set.
 
     Returns:
-        Trajectories:           List of trajectory rollouts.
-        Images:                 List of image rollouts.
+        Trajectories:   List of trajectory rollouts.
+        Images:         List of image rollouts.
     """
     
     # Unpack the trajectory
@@ -329,10 +319,10 @@ def generate_rollouts(
         
         # Simulate the flight
         Tro,Xro,Uro,Iro,Fro,Tsol = sim.simulate(ctl,t0,tf,x0)
-        
+
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
-        if err < err_tol:
+        if err < tol_select:
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,

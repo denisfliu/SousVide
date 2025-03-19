@@ -603,7 +603,7 @@ def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
 
         # Get approximate number of observations
         observations = torch.load(observation_files[0])
-        Ntrain = (Nobsf-1)*observations["Ndata"]
+        Ntrain = max(1,(Nobsf-1))*observations["Ndata"]         # Training and Test is the same set when Nobsf = 1
         Ntest = observations["Ndata"]
 
         # Load pilot
