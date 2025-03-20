@@ -6,15 +6,15 @@ import os
 import torch
 import sousvide.visualize.plot_synthesize as ps
 from tabulate import tabulate
-from rich.console import Console
-
-# Initialize Console
-console = Console()
+from rich import get_console
 
 def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     """
     Plot the losses for each student in the roster.
     """
+
+    # Initialize the rich variables
+    console = get_console()
 
     # Some useful paths
     workspace_path = os.path.dirname(
@@ -27,7 +27,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
         f"Cohort : [bold cyan]{cohort_name}[/bold cyan]\n"
         f"Network: [bold cyan]{network_name}[/bold cyan]"
         )
-    
+
     # Create a figure and a set of subplots
     fig, axs = plt.subplots(1, 2, figsize=(5, 3))
 

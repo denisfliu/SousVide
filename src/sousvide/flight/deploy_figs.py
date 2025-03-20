@@ -2,22 +2,19 @@ import numpy as np
 import torch
 import os
 import json
-from typing import List, Tuple
-
-import sousvide.visualize.plot_synthesize as ps
-
-from sousvide.control.pilot import Pilot
-from figs.control.vehicle_rate_mpc import VehicleRateMPC
-from figs.tsplines import min_snap as ms
+import figs.dynamics.quadcopter_specifications as qs
+import figs.utilities.trajectory_helper as th
+import figs.visualize.generate_videos as gv
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.synthesize.rollout_generator as rg
 import sousvide.visualize.record_flight as rf
-from torchvision.io import write_video
-from torchvision.transforms import Resize
+
+from typing import List
+from sousvide.control.pilot import Pilot
+from figs.tsplines import min_snap as ms
 from figs.simulator import Simulator
-import figs.utilities.trajectory_helper as th
-from figs.dynamics.model_specifications import generate_specifications
-import figs.visualize.generate_videos as gv
+from figs.control.vehicle_rate_mpc import VehicleRateMPC
+
 
 def simulate_roster(cohort_name:str,method_name:str,
                     scene_name:str,course_name:str,
@@ -55,7 +52,7 @@ def simulate_roster(cohort_name:str,method_name:str,
     with open(frame_path) as json_file:
         base_frame_config = json.load(json_file)  
     
-    base_frame_specs = generate_specifications(base_frame_config)
+    base_frame_specs = qs.generate_specifications(base_frame_config)
 
     # Add Expert to Roster
     roster = ["expert"]+roster

@@ -1,6 +1,6 @@
 {
     "duration": null,
-    "reps": null,
+    "reps": 3,
     "rate": null,
     "tol_select": null,
     "randomization": {
