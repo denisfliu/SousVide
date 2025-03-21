@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import sousvide.synthesize.observation_generator as og
+import sousvide.visualize.rich_utilities as ru
 
 from torch.utils.data import DataLoader
 from rich.progress import Progress
@@ -13,15 +14,15 @@ from sousvide.control.networks.base_net import BaseNet
 from sousvide.instruct.synthesized_data import *
 from typing import List
 
-from sousvide.visualize.rich_utilities import console,progress
-
-
 def train_roster(cohort_name:str,roster:List[str],
                  network_name:str,Neps:int,regen_data:bool=False,
                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
     
+    # Initialize the console variable
+    console = ru.get_console()
+    progress = ru.get_training_progress()
 
-    # Regenerate observation data
+    # Re-generate observation data
     if regen_data:
         console.print("Regenerating observation data...")
         og.generate_observation_data(cohort_name,roster)
@@ -30,14 +31,14 @@ def train_roster(cohort_name:str,roster:List[str],
 
     with progress:
         # Train each student
-        for student_name in roster:
+        for student in roster:
             # Initialize student progress bar
-            student_label = f"[bold green3] {student_name} > {network_name}[/] Loss: 0.0"
-            student_task = progress.add_task(student_label.ljust(35),total=Neps,units="epochs")
-            progress_bar = (progress,student_task)
+            student_desc = f"[bold green3]{student:>8} > {network_name}[/]"
+            student_task = progress.add_task(student_desc,total=Neps,loss=0.0,units='epochs')
+            student_bar = (progress,student_task)
 
             # Train the student
-            train_student(cohort_name,student_name,network_name,Neps,progress_bar,lim_sv,lr,batch_size)
+            train_student(cohort_name,student,network_name,Neps,student_bar,lim_sv,lr,batch_size)
 
 def train_student(cohort_name:str,student_name:str,
                   network_name:str,Neps:int,progress_bar:Tuple[Progress,int]=None,
@@ -134,10 +135,10 @@ def train_student(cohort_name:str,student_name:str,
         Loss_tn.append(epLoss_tn)
         Loss_tt.append(epLoss_tt)
         
-        # Update Progress
+        # Update the progress bar
         if progress_bar is not None:
             progress,student_task = progress_bar
-            progress.update(student_task,description=f"[bold green3] {student_name} > {network_name}[/] Loss: {epLoss_tn:.4f}",advance=1)
+            progress.update(student_task,loss=epLoss_tn,advance=1)
 
         # Save at intermediate steps and at the end
         if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
@@ -147,12 +148,9 @@ def train_student(cohort_name:str,student_name:str,
 
             torch.save(network,network_path)
 
-            loss_entry["Loss_tn"] = Loss_tn
-            loss_entry["Loss_tt"] = Loss_tt
-            loss_entry["N_eps"] = ep+1
-            loss_entry["Nd_tn"] = Ndata_tn
-            loss_entry["Nd_tt"] = Ndata_tt
-            loss_entry["t_tn"] = t_train
+            loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
+            loss_entry["Nd_tn"],loss_entry["Nd_tt"] = Ndata_tn,Ndata_tt
+            loss_entry["t_tn"],loss_entry["N_eps"] = t_train,ep+1
 
             # Save Loss
             timestamp = time.strftime("%y%m%d_%H%M%S")

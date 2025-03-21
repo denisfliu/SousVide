@@ -37,6 +37,12 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
         None:           (flight data saved to cohort directory)
     """
 
+    # Initialize the progress variables
+    progress = ru.get_generation_progress()
+    subunits = "dpts"
+    sample_desc1 = "[bold dark_green]Generating rollouts...[/]"
+    sample_desc2 = "[bold dark_green]Saving dataset...[/]"
+
     # Load configs
     method_config = sh.load_config(method_name,"method")
     expert_config = sh.load_config(expert_name,"pilots")
@@ -45,19 +51,14 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
     # Initialize the simulator
     simulator = Simulator(scene_name,method_config["rollout"])
 
-    # Initialize the progress variables
-    progress = ru.get_generation_progress()
-
     # Generate rollouts for each course
     with progress:
         # Initialize sample progress bar
-        sample_desc = ru.get_sample_description()
-        sample_task = progress.add_task(sample_desc,total=None,units='samples')
+        sample_task = progress.add_task(sample_desc1,total=None,units='samples')
 
         for course_name in course_names:
             # Load and name the course_config
             course_config = sh.load_config(course_name,"course")
-            # course_config["name"] = course_name
 
             # Compute desired trajectory
             output = ms.solve(course_config)
@@ -72,9 +73,9 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
                 method_config["rate"], method_config["reps"], Nro_ds
             )
 
-            # Initialize flight progress bar
+            # Initialize course progress bar
             Ndata = 0
-            course_desc = ru.get_course_description(course_name,Ndata)
+            course_desc = ru.get_data_description(course_name,Ndata,subunits=subunits)
             course_task = progress.add_task(course_desc,
                 total=len(Tsp_bts), units='datasets')
 
@@ -89,7 +90,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
                 )
 
                 # Update the samples progress bar config
-                progress.reset(sample_task,total=len(Frames))
+                progress.reset(sample_task,description=sample_desc1,total=len(Frames))
                 sample_bar = (progress,sample_task)
 
                 # Generate rollout data
@@ -98,6 +99,9 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
                     Frames,Perturbations,
                     method_config["duration"],method_config["tol_select"],
                     idx_bt,sample_bar)
+
+                # Update the observations progress bar
+                progress.update(sample_task,description=sample_desc2)
 
                 # Save the rollout data
                 save_rollouts(cohort_name,course_name,
@@ -108,7 +112,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
                 Ndata += sum([trajectory["Ndata"] for trajectory in Trajectories])
 
                 # Update the progress bar
-                course_desc = ru.get_course_description(course_name,Ndata)
+                course_desc = ru.get_data_description(course_name,Ndata,subunits=subunits)
                 progress.update(course_task,
                                 description=course_desc,advance=1)
 
@@ -255,6 +259,9 @@ def generate_rollouts(
         Images:         List of image rollouts.
     """
     
+    # Get console
+    console = ru.get_console()
+
     # Unpack the trajectory
     Tpi,CPi = ms.solve(course_config)
     obj = sh.ts_to_obj(Tpi,CPi)
@@ -269,6 +276,7 @@ def generate_rollouts(
         tol_select = np.inf
 
     # Rollout the trajectories
+    Ndata = len(Perturbations)
     for idx,(frame_config,perturbation) in enumerate(zip(Frames,Perturbations)):
         # Unpack rollout variables
         t0,x0 = perturbation["t0"],perturbation["x0"]
@@ -305,7 +313,16 @@ def generate_rollouts(
             if progress_bar is not None:
                 progress,sample_task = progress_bar
                 progress.update(sample_task,advance=1)
-
+        else:
+            # console.print(
+            #     f"[bold red]Rollout failed to meet tolerance. Skipping...[/]\n"
+            #     f"Euclidean Distance: {err:.3f} > {tol_select:.3f}")
+            
+            Ndata -= 1
+            if progress_bar is not None:
+                progress,sample_task = progress_bar
+                progress.update(sample_task,total=Ndata)
+            
     return Trajectories,Images
 
 def save_rollouts(cohort_name:str,course_name:str,

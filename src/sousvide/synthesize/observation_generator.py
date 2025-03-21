@@ -3,11 +3,11 @@ import os
 import torch
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.control.network_helper as nh
+import sousvide.visualize.rich_utilities as ru
 
 from typing import Dict,Union,List,Tuple
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
-from sousvide.visualize.rich_utilities import console,progress
 
 def generate_observation_data(cohort:str,roster:List[str],
                               subsample:float=1.0) -> None:
@@ -23,90 +23,98 @@ def generate_observation_data(cohort:str,roster:List[str],
 
     """
 
+    # Initialize the progress variables
+    console = ru.get_console()
+    progress = ru.get_generation_progress()
+    subunits = "dpts"
+    obsv_desc1 = "[bold dark_green]Generating observations...[/]"
+    obsv_desc2 = "[bold dark_green]Saving dataset...[/]"
+    
     # Generate some useful intermediate variables
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path,"cohorts",cohort)
     rollout_folder_path = os.path.join(cohort_path,"rollout_data")
 
+    # Extract some useful diagnostics info
     courses = [folder for folder in os.listdir(rollout_folder_path)]
-    Ntj = sum([1 for course in courses for file in os.listdir(os.path.join(rollout_folder_path, course)) if file.startswith("trajectories")])
-    Nds = sum([1 for course in courses for file in os.listdir(os.path.join(rollout_folder_path, course)) if file.startswith("trajectories")])
-    Ncs = len(courses)
-    
+
+    Nds = 0
+    for course in courses:
+        dset_files = os.listdir(os.path.join(rollout_folder_path, course, "trajectories"))
+        Nds += len(dset_files)
+
     # Preface Message
     console.print(f"Generating observation data with subsample ratio {subsample} for...\n",
-                  f"Cohort: {cohort}\n",
-                  f"Roster: {roster}\n",
+                  f"Cohort : [green4]{cohort}[/]\n",
+                  f"Roster : {roster}\n",
                   f"Courses: {courses}")
 
     with progress:
+        # Initialize observations progress bar
+        obsv_task = progress.add_task(obsv_desc1,total=None,units='samples')
+
         # Extract observations for each student
-        for student_name in roster:
+        for student in roster:
             # Load the Pilot
-            pilot = Pilot(cohort,student_name)
-            network_names = list(pilot.policy.networks.keys())
+            pilot = Pilot(cohort,student)
 
-            # Initialize student task
-            student_task = progress.add_task(
-                "Generating Observations...",
-                total=Nds,Ndata=0,idx_cs=0,Ncs=Ncs,
-                student=student_name,networks=network_names
-            )
-
+            # Initialize student progress bar
             Ndata = 0
-            for idx_cs,course in enumerate(courses):
+            network_names = "\["+",".join(list(pilot.policy.networks.keys()))+"]"
+            student_tname = f"[bold green3]{student:>8} > {network_names}[/]\n     [dark_green]Data Count:[/]"
+            student_desc = ru.get_data_description(student_tname,Ndata,subunits=subunits,Nmn=20)
+            student_task = progress.add_task(student_desc,total=Nds, units='datasets')
+            
+            for course in courses:
                 # Load Trajectory Data
-                rollout_data_path = os.path.join(rollout_folder_path,course)
-                trajectory_data_files = sorted([
-                    file for file in os.listdir(rollout_data_path)
-                    if file.startswith("trajectories") and file.endswith(".pt")])
-                image_data_files = sorted([
-                    file for file in os.listdir(rollout_data_path)
-                    if file.startswith("images") and file.endswith(".pt")])
-
-                # Initialize student task
-                dataset_task = progress.add_task("Extraction Observations from File...")
-
+                ro_data_path = os.path.join(rollout_folder_path,course)
+                traj_data_folder = os.path.join(ro_data_path,"trajectories")
+                imgs_data_folder = os.path.join(ro_data_path,"images")
+                traj_data_files = sorted([
+                    file for file in os.listdir(traj_data_folder)])
+                imgs_data_files = sorted([
+                    file for file in os.listdir(imgs_data_folder)])
+                
                 # Generate Observation Data
-                Nds = len(trajectory_data_files)
-                for idx_ds,(traj_data_file,imgs_data_file) in enumerate(zip(trajectory_data_files,image_data_files)):
+                for idx_ds,(traj_data_file,imgs_data_file) in enumerate(zip(traj_data_files,imgs_data_files)):
                     # Load the Data
-                    traj_dataset = torch.load(os.path.join(rollout_data_path,traj_data_file))
-                    imgs_dataset = torch.load(os.path.join(rollout_data_path,imgs_data_file))
+                    traj_dataset = torch.load(os.path.join(traj_data_folder,traj_data_file))
+                    imgs_dataset = torch.load(os.path.join(imgs_data_folder,imgs_data_file))
 
-                    # Reset the Dataset PTask and pack it for observation generation tracking
-                    progress.reset(dataset_task, total=len(traj_dataset))         # Reset for new course
-                    progress_bar = (progress,dataset_task)
-
+                    # Reset the observations progress bar
+                    progress.reset(obsv_task,description=obsv_desc1,total=len(traj_dataset))
+                    obsv_bar = (progress,obsv_task)
+    
                     # Extract the Observations
                     observations,Nobs = generate_observations(pilot,
                                                               traj_dataset,imgs_dataset,
-                                                              subsample,progress_bar)
-                    Ndata += Nobs
+                                                              subsample,obsv_bar)
+                    
+                    # Update the observations progress bar
+                    progress.update(obsv_task,description=obsv_desc2)
 
                     # Save the observations
                     save_observations(cohort_path,course,pilot.name,observations,idx_ds)
 
-                # Update the PTasks
-                progress.update(
-                    student_task, 
-                    advance=1, idx_cs=idx_cs, idx_ds=idx_ds, Ndata=Ndata
-                )
+                    # Update the number of data points
+                    Ndata += Nobs
 
-            # Cap off progress update
-            progress.refresh()
+                    # Update the progress bar
+                    student_desc = ru.get_data_description(student_tname,Ndata,subunits=subunits)
+                    progress.update(student_task,description=student_desc,advance=1)
+
+                # Cap off progress update
+                progress.refresh()
 
 def generate_observations(pilot:Pilot,
                           traj_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
                           imgs_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
-                          subsample:float=1,progress_bar:Tuple[Progress,int]=None) -> Tuple[Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],int]:
+                          subsample:float=1,
+                          progress_bar:Tuple[Progress,int]=None) -> Tuple[Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],int]:
     
     # Initialize the observation data dictionary
     Observations = []
-
-    # Unpack the progress bar
-    progress,task_id = progress_bar
 
     # Unpack augmenteation variables
     aug_type = np.array(pilot.da_cfg["type"])
@@ -122,7 +130,7 @@ def generate_observations(pilot:Pilot,
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
         Uro,Fro = traj_data["Uro"],traj_data["Fro"]
         obj,Ndata = traj_data["obj"],traj_data["Ndata"]
-        rollout_id,course = traj_data["rollout_id"],traj_data["course"]
+        rollout_id = traj_data["rollout_id"]
         frame = traj_data["frame"]
         params = [frame["mass"],frame["force_normalized"]]
     
@@ -183,9 +191,10 @@ def generate_observations(pilot:Pilot,
             # Loop updates
             unn_pr = unn_cr
 
-        # Update the progress bar if it exists
+        # Update the progress bar
         if progress_bar is not None:
-            progress.update(task_id, advance=1)
+            progress,obsv_task = progress_bar
+            progress.update(obsv_task,advance=1)
 
         # Store the observation data
         observations = {
@@ -193,7 +202,7 @@ def generate_observations(pilot:Pilot,
             "Ynn":Ynn,
             "Ndata":len(Xnn),
             "rollout_id":rollout_id,
-            "course":course,"frame":frame
+            "frame":frame
         }
         Observations.append(observations)
 

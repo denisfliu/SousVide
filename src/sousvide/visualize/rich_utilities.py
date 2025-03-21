@@ -30,7 +30,7 @@ def get_training_progress() -> Progress:
     
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("{task.description}"),
+        TextColumn("{task.description} | [bold dark_green]Loss[/]: [dark_green]{task.fields[loss]:.4f}[/]"),
         BarColumn(),
         TextColumn("[bold green3] {task.completed:>2}/{task.total} {task.fields[units]}"),
         TimeElapsedColumn(),
@@ -38,33 +38,26 @@ def get_training_progress() -> Progress:
     )
     return progress
 
-def get_sample_description() -> str:
-    """
-    Generate a description for the sample progress.
-    
-    Returns:
-        sample_desc:   Formatted string describing the dataset progress.
-    """
-    
-    sample_desc = "[bold dark_green]Dataset Progress...[/]"
-
-    return sample_desc
-
-def get_course_description(course_name:str,Ndata:int) -> str:
+def get_data_description(name:str,value:int, subunits:str=None, Nmn:int=10,Nct:int=10) -> str:
     """"
-    Generate a description for the course progress.
+    Generate a description for the data progress.
     
     Args:
-        course_name:   Name of the course.
-        Ndata:         Number of data points in the course."
+        name:   Name of the data.
+        value:  Number of data points."
 
     Returns:
-        course_desc:   Formatted string describing the course and number of data points.
+        data_desc:   Formatted string describing the course and number of data points.
     """
 
-    main_desc = f"[bold green3]{course_name:<10}[/][dark_green]"
-    count_desc = f"({Ndata:>4} dpts)".ljust(10)
 
-    course_desc = main_desc + count_desc
+    name_desc = f"[bold green3]{name:<{Nmn}}[/][dark_green]"
+
+    if subunits is not None:
+        value_desc = f"({value:>4} {subunits})".ljust(Nct)
+    else:
+        value_desc = f"{value:>4.5}"
+
+    data_desc = name_desc + value_desc
     
-    return course_desc
+    return data_desc

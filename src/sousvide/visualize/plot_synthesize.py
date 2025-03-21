@@ -5,9 +5,12 @@ import sousvide.visualize.plot_3D as p3
 import sousvide.visualize.plot_time as pt
 import sousvide.visualize.rich_utilities as ru
 
+from rich.text import Text
+
 from typing import List
 
-def plot_rollout_data(cohort:str,Nsamples:int=50,random:bool=True):
+def plot_rollout_data(cohort:str,Nsamples:int=50,
+                      show_3D:bool=True,show_time:bool=True):
     """"
     Plot the rollout data for a cohort.
     """
@@ -20,35 +23,61 @@ def plot_rollout_data(cohort:str,Nsamples:int=50,random:bool=True):
 
     # Initialize the console variable
     console = ru.get_console()
+    subunits = "dpts"
 
     # Load Flight Data
+    Ntot = 0
+    courses_desc = []
     for course in os.listdir(rollout_path):
         course_path = os.path.join(rollout_path, course)
         
         # Extract all files in child folder "trajectories"
-        trajs_path = os.path.join(course_path, "trajectories")
-        trajs_files = os.listdir(trajs_path)
-                
-        # Load a .pt file
-        if random == True:
-            trajs_file = np.random.choice(trajs_files)
-        else:
-            trajs_file = trajs_files[0]
+        traj_folder_path = os.path.join(course_path, "trajectories")
+        traj_files = os.listdir(traj_folder_path)
+        traj_file_paths = [os.path.join(traj_folder_path, f) for f in traj_files]
 
-        trajs_file_path = os.path.join(trajs_path, trajs_file)
-        trajectories = torch.load(trajs_file_path)
+        # Extract diagnostics data
+        Ndsets = len(traj_file_paths)
+        Ntot += Ndsets
 
-        # Trim the number of samples
-        if Nsamples > len(trajectories):
-            Nsamples = len(trajectories)
-            console.print(f"Only {Nsamples} samples available in {trajs_file}. Showing all samples.")
-        else:
-            console.print(f"Showing {Nsamples} samples from {trajs_file}")
-        trajectories = trajectories[0:Nsamples]
+        Ndata = 0
+        for traj_file_path in traj_file_paths:
+            trajectories = torch.load(traj_file_path)
+
+            for trajectory in trajectories:
+                Ndata += trajectory["Ndata"]
+
+        course_desc = ru.get_data_description(course, Ndata, subunits=subunits) + f" [{Ndsets} datasets]"
+        courses_desc.append(course_desc)
+    
+        # Plot example trajectory
+        if show_3D == True or show_time == True:
+            # Load a random trajectory file
+            traj_file = np.random.choice(traj_files)
+            traj_file_path = os.path.join(traj_folder_path, traj_file)
+            trajectories = torch.load(traj_file_path)
+            
+            # Trim the number of samples
+            if Nsamples > len(trajectories):
+                Nsamples = len(trajectories)
+                console.print(f"Only {Nsamples} samples available in {traj_file}. Showing all samples.")
+            else:
+                console.print(f"Showing {Nsamples} samples from {traj_file}")
+            trajectories = trajectories[0:Nsamples]
 
         # Plot the data
-        p3.RO_to_3D(trajectories,scale=0.5)
-        pt.RO_to_time(trajectories)
+        if show_3D == True:
+            p3.RO_to_3D(trajectories,scale=0.5)
+        if show_time == True:
+            pt.RO_to_time(trajectories)
+
+    # Collate diagnostics
+    courses_desc = [Text.from_markup(course_desc).plain for course_desc in courses_desc]  # Strip rich tags
+    courses_desc = "\n".join(courses_desc)  # Join descriptions into a single string
+    console.print(
+        f"Rollout produced {Ntot} datasets with the following courses: \n"
+        f"{courses_desc}", style="white")
+        
 
 # def plot_observation_data(cohort:str,roster:List[str],random:bool=True):
 #     """"

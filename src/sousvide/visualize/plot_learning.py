@@ -25,15 +25,14 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     console.print(
         f"{'=' * Nln}\n"
         f"Cohort : [bold cyan]{cohort_name}[/bold cyan]\n"
-        f"Network: [bold cyan]{network_name}[/bold cyan]"
-        )
-
+        f"Network: [bold cyan]{network_name}[/bold cyan]")
     # Create a figure and a set of subplots
     fig, axs = plt.subplots(1, 2, figsize=(5, 3))
 
     # Plot the losses for each student
     for student_name in roster:
         try:
+            
             student_path = os.path.join(cohort_path, "roster", student_name)
             losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
 
