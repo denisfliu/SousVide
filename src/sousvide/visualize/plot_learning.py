@@ -21,11 +21,13 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path, "cohorts", cohort_name)
 
-    # Print the header
-    console.print(
+    # Compile the learning summary header
+    learning_summary = [
         f"{'=' * Nln}\n"
-        f"Cohort : [bold cyan]{cohort_name}[/bold cyan]\n"
-        f"Network: [bold cyan]{network_name}[/bold cyan]")
+        f"Cohort : [bold cyan]{cohort_name}[/]\n"
+        f"Network: [bold cyan]{network_name}[/]\n"
+        f"{'=' * Nln}"]
+
     # Create a figure and a set of subplots
     fig, axs = plt.subplots(1, 2, figsize=(5, 3))
 
@@ -65,17 +67,27 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
         minutes = (T_tn % 3600) // 60
         seconds = np.around(T_tn % 60, 1)
 
-        # Print some overall stuff
-        console.print(
+        # Compile the student summary
+        student_summary = [
             f"{'-' * Nln}\n"
-            f"Student: [bold cyan]{student_name}[/bold cyan] | "
+            f"Student: [bold cyan]{student_name.center(10)}[/bold cyan] | "
             f"Total Epochs: {Neps} | "
             f"Data Size: {Nd_tn[-1]}/{Nd_tt[-1]}\n"
-            f"Training Loss: {np.around(Loss_tn[-1], 3)}/{np.around(Loss_tt[-1], 3)} | "
-            f"Training Time: {hours}h {minutes}m {seconds}s"
-        )
+            f"[bold green]Train Loss: {np.around(Loss_tn[-1], 3)}[/]   | Test Loss: {np.around(Loss_tt[-1], 3)}  | "
+            f"Time: {hours}h {minutes}m {seconds}s"
+        ]
+
+        learning_summary += student_summary
+
+        # Plot the losses
         axs[0].plot(Loss_tn, label=student_name)
         axs[1].plot(Loss_tt, label=student_name)
+
+    # Compile the learning summary footer
+    learning_summary += [f"{'=' * Nln}"]
+
+    # Print the learning summary
+    console.print(*learning_summary)
 
     axs[0].set_title('Training Loss')
     axs[0].legend(loc='upper right')
