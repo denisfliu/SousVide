@@ -1,6 +1,8 @@
 import numpy as np
 import os
 import torch
+
+import sousvide.synthesize.compress_helper as ch
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.control.network_helper as nh
 import sousvide.visualize.rich_utilities as ru
@@ -135,7 +137,7 @@ def generate_observations(pilot:Pilot,
         params = [frame["mass"],frame["force_normalized"]]
     
         # Decompress and extract the image data if compressed
-        Imgs = sh.decompress_data(imgs_data)["images"]
+        Imgs = ch.decompress_data(imgs_data)["images"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.
@@ -211,7 +213,7 @@ def generate_observations(pilot:Pilot,
 
     return Observations,Nobs
 
-def save_observations(cohort_path:str,course_name:str,
+def save_observations(cohort_name:str,course_name:str,
                       pilot_name:str,
                       Observations:List[Dict[str,List[Dict[str,torch.Tensor]]]],
                       idx_set:int) -> None:
@@ -230,6 +232,11 @@ def save_observations(cohort_path:str,course_name:str,
     Returns:
         None:           (observation data saved to cohort directory)
     """
+    
+    # Some useful path(s)
+    workspace_path = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
 
     # Use first observation to get relevant keys
     syllabus = []

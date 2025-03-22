@@ -332,8 +332,8 @@ class Pilot(BaseController):
         return unn,znn,Xnn,tsol
     
     def control(self,
-                upr:np.ndarray,
                 tcr:float,xcr:np.ndarray,
+                upr:np.ndarray,
                 obj:np.ndarray,
                 icr:Union[npt.NDArray[np.uint8],None],zcr:Dict[str,torch.Tensor]) -> Tuple[
                     np.ndarray,

@@ -1,12 +1,13 @@
-from cv2 import mean
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List
 import os
 import torch
-import sousvide.visualize.plot_synthesize as ps
-from tabulate import tabulate
-from rich import get_console
+
+import sousvide.visualize.plot_3D as p3
+import sousvide.visualize.rich_utilities as ru
+import sousvide.flight.flight_helper as fh
+
+from typing import List
 
 def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     """
@@ -14,7 +15,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     """
 
     # Initialize the rich variables
-    console = get_console()
+    console = ru.get_console()
 
     # Some useful paths
     workspace_path = os.path.dirname(
@@ -34,7 +35,6 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     # Plot the losses for each student
     for student_name in roster:
         try:
-            
             student_path = os.path.join(cohort_path, "roster", student_name)
             losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
 
@@ -73,7 +73,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
             f"Student: [bold cyan]{student_name.center(10)}[/bold cyan] | "
             f"Total Epochs: {Neps} | "
             f"Data Size: {Nd_tn[-1]}/{Nd_tt[-1]}\n"
-            f"[bold green]Train Loss: {np.around(Loss_tn[-1], 3)}[/]   | Test Loss: {np.around(Loss_tt[-1], 3)}  | "
+            f"[bold green]Train Loss: {np.around(Loss_tn[-1], 4)}[/]  | Test Loss: {np.around(Loss_tt[-1], 4)}  | "
             f"Time: {hours}h {minutes}m {seconds}s"
         ]
 
@@ -82,6 +82,9 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
         # Plot the losses
         axs[0].plot(Loss_tn, label=student_name)
         axs[1].plot(Loss_tt, label=student_name)
+
+        axs[0].set_yscale('log')
+        axs[1].set_yscale('log')
 
     # Compile the learning summary footer
     learning_summary += [f"{'=' * Nln}"]
@@ -97,7 +100,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
 
     # Set common labels
     for ax in axs.flat:
-        ax.set(xlabel='Epoch', ylabel='Loss')
+        ax.set(xlabel='Epoch', ylabel='Loss (log scale)')
 
     # Adjust layout for better spacing
     plt.tight_layout()
@@ -105,69 +108,40 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
     # Show the plots
     plt.show(block=False)
 
-def review_simulations(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
+def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
     """
     Plot the simulations for each student in the roster.
     """
 
+    # Initialize the rich variables
+    console = ru.get_console()
+    table = ru.get_deployment_table()
+
     # Add Expert to Roster
     roster = ["expert"] + roster
-
-    # Initialize Table for plotting and visualization
-    headers = ["Mean Solve (Hz)", "Worst Solve (Hz)",
-               "Pos TTE (m)", "Best Pos TTE (m)"]
-    table = []
 
     # Some useful paths
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    output_path = os.path.join(workspace_path, "cohorts", cohort_name, "output")
+    deployment_folder = os.path.join(workspace_path, "cohorts", cohort_name, "deployment_data")
 
-    # Print some overall stuff
-    console.print("========================================================================================================")
-    console.print(f"Cohort Name: {cohort_name}")
-    console.print(f"Course Name: {course_name}")
+    for pilot in roster:
+        # Load the deployment data
+        try:
+            deployment_path = os.path.join(deployment_folder,"sim_"+course_name+"_"+pilot+".pt")
+            Trajectories = torch.load(deployment_path)
+            
+            # Get pilot metrics
+            metrics = fh.compute_flight_metrics(Trajectories)
+            table = ru.update_deployment_table(table,pilot,metrics)
+        except:
+            console.print(f"Pilot [bold cyan]{pilot}[/] does not have a deployment.")
+            continue
 
-    console.print(f"Roster: {roster}")
-    for pilot_name in roster:
-        # Load Simulation Data
-        trajectories = torch.load(os.path.join(output_path, f"sim_{course_name}_{pilot_name}.pt"))
-
-        Ebnd = np.zeros((len(trajectories), trajectories[0]["Ndata"]))
-        Tsol = np.zeros((len(trajectories), trajectories[0]["Ndata"]))
-        methods = []
-        for idx, trajectory in enumerate(trajectories):
-            # Extract Method Name
-            method_name = trajectory["rollout_id"].split("_")[0]
-            if method_name not in methods:
-                methods.append(method_name)
-
-            # Error Bounds
-            for i in range(trajectory["Ndata"]):
-                Ebnd[idx, i] = np.min(np.linalg.norm(trajectory["Xro"][:, i].reshape(-1, 1) - trajectory["tXUd"][1:11, :], axis=0))
-
-            # Total Solve Time
-            Tsol[idx, :] = np.sum(trajectory["Tsol"], axis=0)
-
-        # Trajectory Data
-        pilot_name = pilot_name
-        mean_solve = 1 / np.mean(Tsol)
-        worst_solve = 1 / np.max(Tsol)
-        mean_error = np.mean(Ebnd)
-        mean_error_traj = np.mean(Ebnd, axis=1)
-        best_error_idx = np.argmin(mean_error_traj)
-        best_error = mean_error_traj[best_error_idx]
-
-        # Append Data
-        table.append([pilot_name, mean_solve, worst_solve, mean_error, best_error])
-
+        # Plot the trajectories for each pilot
         if plot_show:
-            console.print("========================================================================================================")
-            console.print("Visualization ------------------------------------------------------------------------------------------")
-            console.print(f"Pilot Name    : {pilot_name}")
-            console.print(f"Test Method(s): {methods}")
-            ps.RO_to_spatial(trajectories, plot_last=True, tXUd=trajectories[0]["tXUd"])
+            console.print(f"Plotting trajectories for [bold cyan]{pilot}[/]...")
+            p3.RO_to_3D(Trajectories,plot_last=True)
 
-    console.print("========================================================================================================")
-    console.print("Performance --------------------------------------------------------------------------------------------")
-    console.print(tabulate(table, headers=headers, tablefmt="grid"))
+    # Print the summary table
+    console.print(table)

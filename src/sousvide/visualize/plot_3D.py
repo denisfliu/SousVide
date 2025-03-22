@@ -10,7 +10,7 @@ def tXU_to_3D(tXU_list:List[np.ndarray],
     
     # Compute some useful variables
     traj_colors = ["red","green","blue","orange","purple","brown","pink","gray","olive","cyan"]
-    tX_min,tX_max = pu.get_plot_limits(tXU_list,use_deadzone=True)
+    tX_min,tX_max = pu.get_plot_limits(tXU_list,lim_min=True,lim_max=True)
     
     plim = np.array([
         [ tX_min[1], tX_max[1]],

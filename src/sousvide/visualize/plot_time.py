@@ -11,9 +11,8 @@ def tXU_to_time(tXU_list:List[np.ndarray],tXd:np.ndarray=None):
     pv_labels = [["$p_x$","$p_y$","$p_z$"],["$v_x$","$v_y$","$v_z$"]]
     qu_labels = [[r"$q_x$", r"$q_y$", r"$q_z$", "q_w"], [r"$f_{th}$", r"$\omega_x$", r"$\omega_y$", r"$\omega_z$"]]
 
-    tXU_min,tXU_max = pu.get_plot_limits(tXU_list,use_deadzone=True)
+    tXU_min,tXU_max = pu.get_plot_limits(tXU_list,lim_min=True)
    
-    
     # Plot Positions and Velocities
     fig, axs = plt.subplots(3, 2, figsize=(10, 4))
     for i in range(2):

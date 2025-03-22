@@ -5,12 +5,14 @@ import figs.utilities.trajectory_helper as th
 
 from typing import Tuple,List
 
-def get_plot_limits(XX:List[np.ndarray],use_deadzone:bool=True) -> Tuple[np.ndarray,np.ndarray]:
+def get_plot_limits(XX:List[np.ndarray],
+                    lim_min:bool=True,lim_max:bool=True,abs_max:float=10.0) -> Tuple[np.ndarray,np.ndarray]:
     """
     Get the plot limits for the trajectory.
     """
+
     x_dim = XX[0].shape[0]
-    if use_deadzone == True:
+    if lim_min == True:
         x_max,x_min = np.ones(x_dim),-np.ones(x_dim)
     else:
         x_max,x_min = np.zeros(x_dim),np.zeros(x_dim)
@@ -21,6 +23,10 @@ def get_plot_limits(XX:List[np.ndarray],use_deadzone:bool=True) -> Tuple[np.ndar
 
         x_min = np.minimum(x_min,xi_min)
         x_max = np.maximum(x_max,xi_max)
+
+    if lim_max == True:
+        x_max = np.minimum(x_max,abs_max)
+        x_min = np.maximum(x_min,-abs_max)
 
     # Pad the limits for better visualization
     delta = 0.1*(x_max-x_min)

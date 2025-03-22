@@ -54,7 +54,11 @@ def train_student(cohort_name:str,student_name:str,
 
     # Extract network if it exists
     if network_name not in student.policy.networks:
-        # console.print(f"Network {network_name} not found in student {student_name}.")
+        # Update the progress bar if it exists
+        if progress_bar is not None:
+            progress,student_task = progress_bar
+            progress.update(student_task,description=f"{student_name} does not use {network_name}.")
+
         return
     else:
         network:BaseNet = get_network(student.policy,network_name)    
