@@ -12,6 +12,7 @@ from rich.progress import Progress
 from sousvide.control.pilot import Pilot
 
 def generate_observation_data(cohort:str,roster:List[str],
+                              networks:Union[List[str],None]=None,
                               subsample:float=1.0) -> None:
     """
     Takes rollout data and generates observations for each pilot in the cohort. The observations are
@@ -61,6 +62,12 @@ def generate_observation_data(cohort:str,roster:List[str],
             # Load the Pilot
             pilot = Pilot(cohort,student)
 
+            # Check if the student has desired networks
+            if networks is not None:
+                if set(networks).isdisjoint(pilot.policy.networks):
+                    console.print(f"Pilot [bold cyan]{student}[/] does not have network [bold cyan]{networks}[/].")
+                    continue
+
             # Initialize student progress bar
             Ndata = 0
             network_names = "\["+",".join(list(pilot.policy.networks.keys()))+"]"
@@ -97,7 +104,7 @@ def generate_observation_data(cohort:str,roster:List[str],
                     progress.update(obsv_task,description=obsv_desc2)
 
                     # Save the observations
-                    save_observations(cohort_path,course,pilot.name,observations,idx_ds)
+                    save_observations(cohort_path,course,pilot.name,observations,idx_ds,networks)
 
                     # Update the number of data points
                     Ndata += Nobs
@@ -216,7 +223,7 @@ def generate_observations(pilot:Pilot,
 def save_observations(cohort_name:str,course_name:str,
                       pilot_name:str,
                       Observations:List[Dict[str,List[Dict[str,torch.Tensor]]]],
-                      idx_set:int) -> None:
+                      idx_set:int,networks:Union[List[str],None]=None) -> None:
     
     """
     Saves the observation data to a .pt file in folders corresponding to pilot name within the course
@@ -228,6 +235,7 @@ def save_observations(cohort_name:str,course_name:str,
         pilot_name:     Name of the pilot.
         Observations:   Observation data.
         idx_set:        Index of the observation data set.
+        networks:       List of network names to filter observations (optional).
 
     Returns:
         None:           (observation data saved to cohort directory)
@@ -242,7 +250,8 @@ def save_observations(cohort_name:str,course_name:str,
     syllabus = []
     for key,value in Observations[0]["Ynn"][0].items():
         if value is not None:
-            syllabus.append(key)
+            if networks is None or key in networks:
+                syllabus.append(key)
     
     for topic_name in syllabus:
         # Create the topic directory if it doesn't exist

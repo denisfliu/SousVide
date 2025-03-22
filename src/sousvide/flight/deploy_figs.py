@@ -19,7 +19,7 @@ from figs.control.vehicle_rate_mpc import VehicleRateMPC
 
 def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str,
                   roster:List[str],expert_name:str="vrmpc_fr",bframe_name:str="carl",
-                  mode:Literal["evaluate","visualize","generate"]="eval",show_table:bool=False) -> Union[None,dict]:
+                  mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
     """"
     Simulate a roster of pilots on a given course within a given scene on
     variations of a specific drone frame using a specified method. This is

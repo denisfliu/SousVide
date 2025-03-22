@@ -19,7 +19,8 @@ import sousvide.flight.deploy_figs as df
 
 def train_roster(cohort_name:str,roster:List[str],
                  network_name:str,Neps:int,
-                 regen:bool=False,use_deploy:Union[None,str]=None,
+                 regen:bool=False,
+                 use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
     
     # Initialize the console variable
@@ -42,15 +43,14 @@ def train_roster(cohort_name:str,roster:List[str],
             student_bar = (progress,student_task)
 
             # Train the student
-            train_student(cohort_name,student,network_name,
-                          Neps,use_deploy,
-                          student_bar,
-                          lim_sv,lr,batch_size)
+            train_student(cohort_name,student,network_name,Neps,
+                          use_deploy,deploy_method,
+                          student_bar,lim_sv,lr,batch_size)
 
-def train_student(cohort_name:str,student_name:str,network_name:str,
-                  Neps:int,use_deploy:Union[None,str]=None,
-                  progress_bar:Tuple[Progress,int]=None,
-                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
+def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
+                  use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
+                  progress_bar:Tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  ) -> None:
     
     # Pytorch Config
     use_cuda = torch.cuda.is_available()
@@ -164,11 +164,12 @@ def train_student(cohort_name:str,student_name:str,network_name:str,
             if use_deploy is not None:
                 # Use test set course
                 eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
-                
+
                 with contextlib.redirect_stdout(io.StringIO()):
-                    metric = df.deploy_roster(cohort_name,eval_course,use_deploy,"eval_nominal",
-                                    [student_name],
-                                    mode="evaluate")
+                    metric = df.deploy_roster(
+                        cohort_name,eval_course,
+                        use_deploy,deploy_method,
+                        [student_name],mode="evaluate")
                 Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
 
             loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt

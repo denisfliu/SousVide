@@ -9,7 +9,7 @@ import sousvide.flight.flight_helper as fh
 
 from typing import List
 
-def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
+def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=70):
     """
     Plot the losses for each student in the roster.
     """
@@ -71,7 +71,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
 
         Loss_tn = np.hstack(Loss_tn)
         Loss_tt = np.hstack(Loss_tt)
-        Eval_tte = np.hstack(Eval_tte)
+        Eval_tte = np.vstack(Eval_tte)
 
         # Compute the training time
         student_summary = ru.get_student_summary(
@@ -90,6 +90,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=65):
 
         axs[0].set_yscale('log')
         axs[1].set_yscale('log')
+        axs[2].set_yscale('log')
 
     # Compile the learning summary footer
     learning_summary += [f"{'=' * Nln}"]
