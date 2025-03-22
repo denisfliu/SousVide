@@ -171,6 +171,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
                         use_deploy,deploy_method,
                         [student_name],mode="evaluate")
                 Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
+            else:
+                Eval_tte = None
 
             loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
             loss_entry["Eval_tte"] = Eval_tte

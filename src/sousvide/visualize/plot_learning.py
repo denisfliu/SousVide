@@ -9,7 +9,7 @@ import sousvide.flight.flight_helper as fh
 
 from typing import List
 
-def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=70):
+def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70):
     """
     Plot the losses for each student in the roster.
     """
@@ -49,15 +49,13 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,Nln:int=70):
         Nd_tn, Nd_tt = [], []
         T_tn = 0
         for loss_data in losses.values():
-
             # Add the loss data to the lists
             Loss_tn.append(loss_data["Loss_tn"])
             Loss_tt.append(loss_data["Loss_tt"])
 
             # Add the evaluation data to the list, adjusting for the number of episodes
-            Eval_tte_i = np.array(loss_data["Eval_tte"])
-            Eval_tte_i[:, 0] += Neps
-            Eval_tte.append(Eval_tte_i)
+            if loss_data["Eval_tte"] is not None:
+                Eval_tte.append(np.array(loss_data["Eval_tte"]))
 
             # Update the total number of episodes and other metrics
             Neps += loss_data["N_eps"]
