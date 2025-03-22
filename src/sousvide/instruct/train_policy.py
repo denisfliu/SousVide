@@ -1,189 +1,217 @@
-import numpy as np
 import os
 import time
+import contextlib
+import io
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader,Dataset
-from tqdm.notebook import trange
+import sousvide.synthesize.observation_generator as og
+import sousvide.visualize.rich_utilities as ru
+
+from typing import List
+from torch.utils.data import DataLoader
+from rich.progress import Progress
 from sousvide.control.pilot import Pilot
+from sousvide.control.policy import Policy
+from sousvide.control.networks.base_net import BaseNet
 from sousvide.instruct.synthesized_data import *
-from typing import List,Tuple,Literal
-from enum import Enum
+import sousvide.flight.deploy_figs as df
 
 def train_roster(cohort_name:str,roster:List[str],
-                 mode:Literal["Parameter","Odometry","Commander"],
-                 Neps:int,lim_sv:int,
-                 lr:float=1e-4,batch_size:int=64):
+                 network_name:str,Neps:int,
+                 regen:bool=False,
+                 use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
+                 lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
+    
+    # Initialize the console variable
+    console = ru.get_console()
+    progress = ru.get_training_progress()
 
-    for student_name in roster:
-        # Load Student
-        student = Pilot(cohort_name,student_name)
-        student.set_mode('train')
+    # Re-generate observation data
+    if regen:
+        console.print("Regenerating observation data...")
+        og.generate_observation_data(cohort_name,roster)
+    else:
+        console.print("Using existing observation data...")
 
-        train_student(cohort_name,student,mode,Neps,lim_sv,lr,batch_size)
+    with progress:
+        # Train each student
+        for student in roster:
+            # Initialize student progress bar
+            student_desc = f"[bold green3]{student:>8} > {network_name}[/]"
+            student_task = progress.add_task(student_desc,total=Neps,loss=0.0,units='epochs')
+            student_bar = (progress,student_task)
 
-def train_student(cohort_name:str,student:Pilot,
-                  mode:Literal["Parameter","Odometry","Commander"],
-                  Neps:int,lim_sv:int,lr:float,batch_size:int):
+            # Train the student
+            train_student(cohort_name,student,network_name,Neps,
+                          use_deploy,deploy_method,
+                          student_bar,lim_sv,lr,batch_size)
 
+def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
+                  use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
+                  progress_bar:Tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  ) -> None:
+    
     # Pytorch Config
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
     criterion = nn.MSELoss(reduction='mean')
 
-    # Send to GPU
-    student.model.to(device)
+    # Load the student
+    student = Pilot(cohort_name,student_name)
 
-    # Select model components
-    if mode in student.model.get_network:
-        model = student.model.get_network[mode]["Train"]
-    else:
-        print("--------------------------------------------------------------------------")
-        print(student.name,"has no model for",mode)
-        print("--------------------------------------------------------------------------")
+    # Extract network if it exists
+    if network_name not in student.policy.networks:
+        # Update the progress bar if it exists
+        if progress_bar is not None:
+            progress,student_task = progress_bar
+            progress.update(student_task,description=f"{student_name} does not use {network_name}.")
 
         return
+    else:
+        network:BaseNet = get_network(student.policy,network_name)    
 
     # Set parameters to optimize over
-    opt = optim.Adam(model.parameters(),lr=lr)
+    opt = optim.Adam(network.parameters(),lr=lr)
 
     # Some Useful Paths
     student_path = student.path
-    model_path   = os.path.join(student_path,"model.pth")
-    losses_path  = os.path.join(student_path,"losses_"+mode+".pt")
+    losses_path  = os.path.join(student_path,"losses_"+network_name+".pt")
+    network_path = os.path.join(student_path,network_name+".pt")
 
-    # Say who we are training
-    print("Training Student: ",student.name)
-    
-    # Setup Loss Variables (load if exists)
-    losses: Dict[str, List] = {}
+    # Load loss log if it exists
     if os.path.exists(losses_path):
-        losses = torch.load(losses_path)
-
-        print("Re-training existing network.")
-        print("Previous Epochs: ", sum(losses["Neps"]), losses["Neps"])
-
-        losses["train"].append([]),losses["test"].append([])
-        losses["Neps"].append(0),losses["Nspl"].append(0),losses["t_train"].append(0)
+        prev_losses_log = torch.load(losses_path)
     else:
-        losses = {
-            "train": [None], "test": [None],
-            "Neps": [None], "Nspl": [None], "t_train": [None]
-        }
-        print("Training new network.")
+        prev_losses_log = {}
 
-    Loss_train,Loss_tests = [],[]
+    # Initialize the loss entry
+    loss_entry = {
+        "network": network_name,
+        "N_eps": None, "Nd_tn": None, "Nd_tt": None, "t_tn": None,
+        "Loss_tn": [], "Loss_tt": [], "Eval_tte": [],
+    }
 
     # Record the start time
     start_time = time.time()
 
     # Training + Testing Loop
-    with trange(Neps) as eps:
-        for ep in eps:
-            # Lock/Unlock Networks
-            unlock_networks(student,mode)
+    Loss_tn,Loss_tt = [],[]
+    Eval_tte = []
+    for ep in range(Neps):
+        # Get Observation Data Files (Paths)
+        od_train_files,od_test_files = get_data_paths(cohort_name,student.name,network_name)
 
-            # Get Observation Data Files (Paths)
-            od_train_files,od_test_files = get_data_paths(cohort_name,student.name)
+        # Training
+        epLosses_tn,Ndata_tn = [],0
+        for od_train_file in od_train_files:
+            # Load Datasets
+            dataset = generate_dataset(od_train_file,device)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Training
-            loss_log_tn =[]
-            for od_train_file in od_train_files:
-                # Load Datasets
-                dataset = generate_dataset(od_train_file,student,mode,device)
-                dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
+            for input,label in dataloader:
+                # Forward Pass
+                prediction = network(*input)
+                loss = criterion(prediction,label)
 
-                # Training
-                for input,label in dataloader:
-                    # Move to GPU
-                    input,label = tuple(tensor.to(device) for tensor in input),label.to(device)
+                # Backward Pass
+                loss.backward()
+                opt.step()
+                opt.zero_grad()
 
-                    # Forward Pass
-                    prediction,_ = model(*input)
-                    loss = criterion(prediction,label)
+                # Save loss logs
+                epLosses_tn.append(label.shape[0]*loss.item())
+                Ndata_tn += label.shape[0]
 
-                    # Backward Pass
-                    loss.backward()
-                    opt.step()
-                    opt.zero_grad()
-
-                    # Save loss logs
-                    loss_log_tn.append((label.shape[0],loss.item()))
+        # Testing
+        epLosses_tt,Ndata_tt = [],0
+        for od_test_file in od_test_files:
+            # Load Datasets
+            dataset = generate_dataset(od_test_file,device)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Testing
-            log_log_tt = []
-            for od_test_file in od_test_files:
-                # Load Datasets
-                dataset = generate_dataset(od_test_file,student,mode,device)
-                dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
+            for input,label in dataloader:
+                # Forward Pass
+                prediction = network(*input)
+                loss = criterion(prediction,label)
 
-                # Testing
-                for input,label in dataloader:
-                    # Move to GPU
-                    input,label = tuple(tensor.to(device) for tensor in input),label.to(device)
+                # Save loss logs
+                epLosses_tt.append(label.shape[0]*loss.item())
+                Ndata_tt += label.shape[0]
 
-                    # Forward Pass
-                    prediction,_ = model(*input)
-                    loss = criterion(prediction,label)
-
-                    # Save loss logs
-                    log_log_tt.append((label.shape[0],loss.item()))
-
-            # Loss Diagnostics
-            Ntn = np.sum([n for n,_ in loss_log_tn])
-            Ntt = np.sum([n for n,_ in log_log_tt])
-            loss_train = np.sum([n*loss for n,loss in loss_log_tn])/Ntn
-            loss_tests = np.sum([n*loss for n,loss in log_log_tt])/Ntt
-
-            eps.set_description('Loss %f' % loss_train)
-            Loss_train.append(loss_train)
-            Loss_tests.append(loss_tests)
-
-            # Save at intermediate steps and at the end
-            if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
-                # Lock the networks
-                unlock_networks(student,"None")
-
-                # Record the end time
-                end_time = time.time()
-                t_train = end_time - start_time
-
-                torch.save(student.model,model_path)
-
-                losses["train"][-1] = Loss_train
-                losses["test"][-1] = Loss_tests
-                losses["Neps"][-1] = ep+1
-                losses["Nspl"][-1] = Ntn
-                losses["t_train"][-1] = t_train
-
-                # Save Loss
-                torch.save(losses,losses_path)
-
-def unlock_networks(student:Pilot,
-                  target:Literal["All","None","Parameter","Odometry","Commander"]):
-    """
-    Locks/Unlocks the networks based on the training mode.
-    
-    """
-
-    if target == "All":
-        for param in student.model.parameters():
-            param.requires_grad = True
-    else:
-        for param in student.model.parameters():
-            param.requires_grad = False
+        # Loss Diagnostics
+        epLoss_tn = sum(epLosses_tn)/Ndata_tn
+        epLoss_tt = sum(epLosses_tt)/Ndata_tt
+        Loss_tn.append(epLoss_tn)
+        Loss_tt.append(epLoss_tt)
         
-        if target == "None":
-            return
-        elif target == "Parameter":
-            for param in student.model.get_network["Parameter"]["Unlock"].parameters():
-                param.requires_grad = True
-        elif target == "Commander":
-            for param in student.model.get_network["Commander"]["Unlock"].parameters():
-                param.requires_grad = True
-        elif target == "Odometry":
-            for param in student.model.get_network["Odometry"]["Unlock"].parameters():
-                param.requires_grad = True
-        else:
-            raise ValueError("Invalid Training Mode")
+        # Update the progress bar
+        if progress_bar is not None:
+            progress,student_task = progress_bar
+            progress.update(student_task,loss=epLoss_tn,advance=1)
+
+        # Save at intermediate steps and at the end
+        if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
+            # Record the end time
+            end_time = time.time()
+            t_train = end_time - start_time
+
+            torch.save(network,network_path)
+
+            # Evaluation (optional)
+            if use_deploy is not None:
+                # Use test set course
+                eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
+
+                with contextlib.redirect_stdout(io.StringIO()):
+                    metric = df.deploy_roster(
+                        cohort_name,eval_course,
+                        use_deploy,deploy_method,
+                        [student_name],mode="evaluate")
+                Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
+            else:
+                Eval_tte = None
+
+            loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
+            loss_entry["Eval_tte"] = Eval_tte
+            loss_entry["Nd_tn"],loss_entry["Nd_tt"] = Ndata_tn,Ndata_tt
+            loss_entry["t_tn"],loss_entry["N_eps"] = t_train,ep+1
+
+            # Save Loss
+            timestamp = time.strftime("%y%m%d_%H%M%S")
+            log_name = f"log_{timestamp}"
+
+            curr_losses_log = prev_losses_log.copy()
+            curr_losses_log[log_name] = loss_entry
+            
+            torch.save(curr_losses_log,losses_path)
+
+    # Cap off progress update
+    progress.refresh()
+
+def get_network(policy:Policy,net_name:Union[str,List[str]]) -> BaseNet:
+    """
+    Get the networks based on the list of network names.
+
+    Args:
+        policy:     The policy object.
+        net_name:   The list of network names or a single network name.
+
+    Returns:
+        network:    The target network.
+    """
+
+    # Get the network
+    network = policy.networks[net_name]
+    
+    # Switch from network forward pass to label pass (if it exists)
+    network.use_fpass = False
+
+    # Lock/Unlock the network
+    network.train()
+    for param in network.parameters():
+        param.requires_grad = True
+    
+    return network

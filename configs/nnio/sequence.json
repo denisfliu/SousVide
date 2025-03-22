@@ -1,0 +1,24 @@
+{
+    "history": [
+        [ null ],
+        [
+            "dt",
+            "px","py","pz",
+            "vx","vy","vz",
+            "qx","qy","qz","qw",
+            "nf","wx","wy","wz"
+        ]
+    ],
+    "features": [
+        [ null ],
+        [ null ]
+    ],
+    "forces": [
+        [ null ],
+        [ "fx","fy","fz" ]
+    ],
+    "command_set": [
+        [ null ],
+        [ "nf","wx","wy","wz" ]
+    ]
+}

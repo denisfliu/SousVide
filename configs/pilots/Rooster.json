@@ -1,13 +1,13 @@
 {
     "networks": {
         "histNet": {
-            "network_type": "sifu",
+            "network_type": "sift",
             "inputs": {
                 "history": [
-                    [ 0, 1, 2, 3, 4],
+                    [0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw",
                         "nf", "wx", "wy", "wz"
@@ -23,16 +23,27 @@
                 }
             },
             "layers": {
-                "hidden_sizes": [64, 32],
-                "histLat_size": 8
+                "d_model": 8,
+                "d_ff": 32,
+                "num_heads": 4,
+                "num_layers": 3
             }
         },
         "commNet": {
-            "network_type": "hpcn",
+            "network_type": "svnet",
             "inputs": {
-                "current": [
+                "rgb_image": [
+                    ["all"], ["all"], ["r", "g", "b"]
+                ],
+                "current1": [
                     [
-                        "px", "py", "pz",
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
@@ -45,8 +56,9 @@
                 ]
             },
             "layers": {
-                "hidden_sizes": [100, 100],
-                "histLat_size": 8
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2,
+                "histLat_size":  8
             }
         }
     },

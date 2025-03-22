@@ -1,81 +1,114 @@
-from cv2 import mean
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Literal
 import os
 import torch
-import sousvide.visualize.plot_synthesize as ps
-from tabulate import tabulate
 
-def plot_losses(cohort_name:str,roster:List[str],network:Literal["Parameter","Odometry","Commander"]):
+import sousvide.visualize.plot_3D as p3
+import sousvide.visualize.rich_utilities as ru
+import sousvide.flight.flight_helper as fh
+
+from typing import List
+
+def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70):
     """
     Plot the losses for each student in the roster.
     """
 
-    # # Clear all plots
-    # plt.close('all')
+    # Initialize the rich variables
+    console = ru.get_console()
 
     # Some useful paths
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
+    cohort_path = os.path.join(workspace_path, "cohorts", cohort_name)
 
-    # Print some overall stuff
-    print("=====================================================")
-    print("Network Type: ",network)
-    print("Cohort:  ",cohort_name)
+    # Compile the learning summary header
+    learning_summary = [
+        f"{'=' * Nln}\n"
+        f"Cohort : [bold cyan]{cohort_name}[/]\n"
+        f"Network: [bold cyan]{network_name}[/]\n"
+        f"{'=' * Nln}"]
 
-    # Plot Losses
-    fig, axs = plt.subplots(1, 2, figsize=(5, 3))
+    # Create a figure and a set of subplots
+    fig, axs = plt.subplots(1, 3, figsize=(5, 3))
 
-    labels = []
+    # Plot the losses for each student
     for student_name in roster:
         try:
-            student_path = os.path.join(cohort_path,"roster",student_name)
-            losses_path = os.path.join(student_path,"losses_"+network+".pt")
+            student_path = os.path.join(cohort_path, "roster", student_name)
+            losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
 
-            losses = torch.load(losses_path)
-            labels.append(student_name)
+            losses: dict = torch.load(losses_path)
         except:
-            print("-----------------------------------------------------")
-            print("No",network,"network found for",student_name)
-            print("-----------------------------------------------------")
+            console.print(f"{'-' * Nln}\n"
+                          f"Student [bold cyan]{student_name}[/bold cyan] does not have a [bold cyan]{network_name}[/bold cyan].")
             continue
-        
-        if "Neps" in losses.keys():
-            print("-----------------------------------------------------")
-            print("Student:",student_name)
-            print("Epochs :",sum(losses["Neps"]))
 
-            if len(set(losses["Nspl"])) == 1:
-                print("Samples:", losses["Nspl"][0])
-            else:
-                print("Samples:", losses["Nspl"])
+        # Gather plot data
+        Loss_tn, Loss_tt, Eval_tte, Neps = [], [], [], 0
+        Nd_tn, Nd_tt = [], []
+        T_tn = 0
+        for loss_data in losses.values():
+            # Add the loss data to the lists
+            Loss_tn.append(loss_data["Loss_tn"])
+            Loss_tt.append(loss_data["Loss_tt"])
 
-            hours = sum(losses["t_train"]) // 3600
-            minutes = (sum(losses["t_train"]) % 3600) // 60
-            seconds = np.around(sum(losses["t_train"]) % 60,1)
-            print(f"t_train: {hours} hour(s), {minutes} minute(s), {seconds} second(s)")
-            # print("t_train: ",losses["t_train"])
+            # Add the evaluation data to the list, adjusting for the number of episodes
+            if loss_data["Eval_tte"] is not None:
+                Eval_tte.append(np.array(loss_data["Eval_tte"]))
 
-        loss_train = np.hstack(losses["train"])
-        loss_test = np.hstack(losses["test"])
-        axs[0].plot(loss_train)
-        axs[0].set_title('Training Loss')
+            # Update the total number of episodes and other metrics
+            Neps += loss_data["N_eps"]
 
-        axs[1].plot(loss_test)
-        axs[1].set_title('Testing Loss')
+            # Append the number of data points for training and testing
+            Nd_tn.append(loss_data["Nd_tn"])
+            Nd_tt.append(loss_data["Nd_tt"])
+
+            # Accumulate the training time
+            T_tn += loss_data["t_tn"]
+
+        Loss_tn = np.hstack(Loss_tn)
+        Loss_tt = np.hstack(Loss_tt)
+        Eval_tte = np.vstack(Eval_tte)
+
+        # Compute the training time
+        student_summary = ru.get_student_summary(
+            student_name, Neps, Nd_tn, Nd_tt,
+            Loss_tn[-1], Loss_tt[-1], Eval_tte[-1,-1], T_tn, Nln
+        )
+
+        learning_summary += student_summary
+
+        # Plot the losses
+        axs[0].plot(Loss_tn, label=student_name)
+        axs[1].plot(Loss_tt, label=student_name)
+
+        axs[2].plot(Eval_tte[:,0],Eval_tte[:,1], label=student_name)
+        axs[2].set_xlim(0, Neps)
+
+        axs[0].set_yscale('log')
+        axs[1].set_yscale('log')
+        axs[2].set_yscale('log')
+
+    # Compile the learning summary footer
+    learning_summary += [f"{'=' * Nln}"]
+
+    # Print the learning summary
+    console.print(*learning_summary)
+
+    axs[0].set_title('Training')
+    axs[0].legend(loc='upper right')
+
+    axs[1].set_title('Testing')
+    axs[1].legend(loc='upper right')
+
+    axs[2].set_title('TTE')
+    axs[2].legend(loc='upper right')
 
     # Set common labels
-    for ax in axs.flat:
-        ax.set(xlabel='Epoch', ylabel='Loss')
-
-    # Add Legend
-    fig.legend(labels, loc='upper right')
-
-    # # Set the y-axis limits
-    # axs[0].set_ylim([0, 0.06])
-    # axs[1].set_ylim([0, 0.06])
+    for ax in axs[0:2]:
+        ax.set(xlabel='Epoch', ylabel='Loss (log scale)')
+    axs[2].set(xlabel='Epoch', ylabel='TTE (m)')
 
     # Adjust layout for better spacing
     plt.tight_layout()
@@ -83,70 +116,40 @@ def plot_losses(cohort_name:str,roster:List[str],network:Literal["Parameter","Od
     # Show the plots
     plt.show(block=False)
 
-def review_simulations(cohort_name:str,course_name:str,roster:List[str],plot_show:bool=False):
+def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
     """
     Plot the simulations for each student in the roster.
-
     """
-    
-    # Add Expert to Roster
-    roster = ["expert"]+roster
 
-    # Initialize Table for plotting and visualization
-    headers=["Mean Solve (Hz)","Worst Solve (Hz)",
-             "Pos TTE (m)","Best Pos TTE (m)"]
-    table = []
+    # Initialize the rich variables
+    console = ru.get_console()
+    table = ru.get_deployment_table()
+
+    # Add Expert to Roster
+    roster = ["expert"] + roster
 
     # Some useful paths
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    output_path = os.path.join(workspace_path,"cohorts",cohort_name,"output")
+    deployment_folder = os.path.join(workspace_path, "cohorts", cohort_name, "deployment_data")
 
-    # Print some overall stuff
-    print("========================================================================================================")
-    print("Cohort Name:",cohort_name)
-    print("Course Name:",course_name)
+    for pilot in roster:
+        # Load the deployment data
+        try:
+            deployment_path = os.path.join(deployment_folder,"sim_"+course_name+"_"+pilot+".pt")
+            Trajectories = torch.load(deployment_path)
+            
+            # Get pilot metrics
+            metrics = fh.compute_flight_metrics(Trajectories)
+            table = ru.update_deployment_table(table,pilot,metrics)
+        except:
+            console.print(f"Pilot [bold cyan]{pilot}[/] does not have a deployment.")
+            continue
 
-    print("Roster:",roster)
-    for pilot_name in roster:
-        # Load Simulation Data
-        trajectories = torch.load(os.path.join(output_path,"sim_"+course_name+"_"+pilot_name+".pt"))
-        
-        Ebnd = np.zeros((len(trajectories),trajectories[0]["Ndata"]))
-        Tsol = np.zeros((len(trajectories),trajectories[0]["Ndata"]))
-        methods = []
-        for idx,trajectory in enumerate(trajectories):
-            # Extract Method Name
-            method_name = trajectory["rollout_id"].split("_")[0]
-            if method_name not in methods:
-                methods.append(method_name)
-
-            # Error Bounds
-            for i in range(trajectory["Ndata"]):
-                Ebnd[idx,i] = np.min(np.linalg.norm(trajectory["Xro"][:,i].reshape(-1,1)-trajectory["tXUd"][1:11,:],axis=0))
-
-            # Total Solve Time
-            Tsol[idx,:] = np.sum(trajectory["Tsol"],axis=0)
-
-        # Trajectory Data
-        pilot_name = pilot_name
-        mean_solve = 1/np.mean(Tsol)
-        worst_solve = 1/np.max(Tsol)
-        mean_error = np.mean(Ebnd)
-        mean_error_traj = np.mean(Ebnd,axis=1)
-        best_error_idx = np.argmin(mean_error_traj)
-        best_error = mean_error_traj[best_error_idx]
-
-        # Append Data
-        table.append([pilot_name,mean_solve,worst_solve,mean_error,best_error])
-
+        # Plot the trajectories for each pilot
         if plot_show:
-            print("========================================================================================================")
-            print("Visualization ------------------------------------------------------------------------------------------")
-            print("Pilot Name    :",pilot_name)
-            print("Test Method(s):",methods)
-            ps.RO_to_spatial(trajectories,plot_last=True,tXUd=trajectories[0]["tXUd"])
+            console.print(f"Plotting trajectories for [bold cyan]{pilot}[/]...")
+            p3.RO_to_3D(Trajectories,plot_last=True)
 
-    print("========================================================================================================")
-    print("Performance --------------------------------------------------------------------------------------------")
-    print(tabulate(table,headers=headers,tablefmt="grid"))
+    # Print the summary table
+    console.print(table)
