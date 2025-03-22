@@ -108,3 +108,29 @@ def update_deployment_table(table:Table,pilot:str,metrics:dict):
     )
     
     return table
+
+def get_student_summary(student:str,
+                        Neps:int,Nd_tn:int,Nd_tt:int,
+                        Loss_tn:float,Loss_tt:float, Eval_tte, T_tn:float,
+                        Nln:int=65) -> str:
+    
+    # Compute the training time
+    hours = T_tn // 3600
+    minutes = (T_tn % 3600) // 60
+    seconds = T_tn % 60
+    print(Eval_tte)
+    student_field = f"Student: [bold cyan]{student}[/]".ljust(31)
+    tepochs_field = f"Epochs: {Neps}".ljust(13)
+    datsize_field = f"Data Size: {Nd_tn[-1]}/{Nd_tt[-1]}"
+    tt_time_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s".ljust(17)
+    tn_loss_field = f"[bold green]Train: {Loss_tn:.4f}[/]".ljust(13)
+    tt_loss_field = f"Test: {Loss_tt:.4f}".ljust(12)
+    ev_loss_field = f"[bold bright_green]Eval TTE: {Eval_tte:.2f}[/]".ljust(15)
+
+    summary = [
+            f"{'-' * Nln}\n"
+            f"{student_field} | {tepochs_field} | {datsize_field}\n"
+            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field} | {ev_loss_field}"
+    ]
+
+    return summary

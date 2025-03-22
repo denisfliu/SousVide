@@ -1,21 +1,25 @@
 import os
 import time
+import contextlib
+import io
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import sousvide.synthesize.observation_generator as og
 import sousvide.visualize.rich_utilities as ru
 
+from typing import List
 from torch.utils.data import DataLoader
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
 from sousvide.control.policy import Policy
 from sousvide.control.networks.base_net import BaseNet
 from sousvide.instruct.synthesized_data import *
-from typing import List
+import sousvide.flight.deploy_figs as df
 
 def train_roster(cohort_name:str,roster:List[str],
-                 network_name:str,Neps:int,regen_data:bool=False,
+                 network_name:str,Neps:int,
+                 regen:bool=False,use_deploy:Union[None,str]=None,
                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
     
     # Initialize the console variable
@@ -23,7 +27,7 @@ def train_roster(cohort_name:str,roster:List[str],
     progress = ru.get_training_progress()
 
     # Re-generate observation data
-    if regen_data:
+    if regen:
         console.print("Regenerating observation data...")
         og.generate_observation_data(cohort_name,roster)
     else:
@@ -38,10 +42,14 @@ def train_roster(cohort_name:str,roster:List[str],
             student_bar = (progress,student_task)
 
             # Train the student
-            train_student(cohort_name,student,network_name,Neps,student_bar,lim_sv,lr,batch_size)
+            train_student(cohort_name,student,network_name,
+                          Neps,use_deploy,
+                          student_bar,
+                          lim_sv,lr,batch_size)
 
-def train_student(cohort_name:str,student_name:str,
-                  network_name:str,Neps:int,progress_bar:Tuple[Progress,int]=None,
+def train_student(cohort_name:str,student_name:str,network_name:str,
+                  Neps:int,use_deploy:Union[None,str]=None,
+                  progress_bar:Tuple[Progress,int]=None,
                   lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
     
     # Pytorch Config
@@ -81,7 +89,7 @@ def train_student(cohort_name:str,student_name:str,
     loss_entry = {
         "network": network_name,
         "N_eps": None, "Nd_tn": None, "Nd_tt": None, "t_tn": None,
-        "Loss_tn": [], "Loss_tt": []
+        "Loss_tn": [], "Loss_tt": [], "Eval_tte": [],
     }
 
     # Record the start time
@@ -89,7 +97,7 @@ def train_student(cohort_name:str,student_name:str,
 
     # Training + Testing Loop
     Loss_tn,Loss_tt = [],[]
-
+    Eval_tte = []
     for ep in range(Neps):
         # Get Observation Data Files (Paths)
         od_train_files,od_test_files = get_data_paths(cohort_name,student.name,network_name)
@@ -152,7 +160,19 @@ def train_student(cohort_name:str,student_name:str,
 
             torch.save(network,network_path)
 
+            # Evaluation (optional)
+            if use_deploy is not None:
+                # Use test set course
+                eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
+                
+                with contextlib.redirect_stdout(io.StringIO()):
+                    metric = df.deploy_roster(cohort_name,eval_course,use_deploy,"eval_nominal",
+                                    [student_name],
+                                    mode="evaluate")
+                Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
+
             loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
+            loss_entry["Eval_tte"] = Eval_tte
             loss_entry["Nd_tn"],loss_entry["Nd_tt"] = Ndata_tn,Ndata_tt
             loss_entry["t_tn"],loss_entry["N_eps"] = t_train,ep+1
 

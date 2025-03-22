@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import os
 
-import figs.dynamics.quadcopter_specifications as qs
 import figs.utilities.trajectory_helper as th
 import figs.visualize.generate_videos as gv
 
@@ -12,17 +11,15 @@ import sousvide.visualize.record_flight as rf
 import sousvide.visualize.rich_utilities as ru
 import sousvide.flight.flight_helper as fh
 
-from typing import List,Any,Literal
+from typing import List,Literal,Union
 from sousvide.control.pilot import Pilot
 from figs.tsplines import min_snap as ms
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
 
-def deploy_roster(cohort_name:str,course_name:str,
-                    scene_name:str,method_name:str,
-                    roster:List[str],
-                    expert_name:str="vrmpc_fr",bframe_name:str="carl",
-                    use_flight_recorder:bool=False,show_table:bool=False) -> None:
+def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str,
+                  roster:List[str],expert_name:str="vrmpc_fr",bframe_name:str="carl",
+                  mode:Literal["evaluate","visualize","generate"]="eval",show_table:bool=False) -> Union[None,dict]:
     """"
     Simulate a roster of pilots on a given course within a given scene on
     variations of a specific drone frame using a specified method. This is
@@ -38,8 +35,8 @@ def deploy_roster(cohort_name:str,course_name:str,
         method_name:    Data generation method detailing the sampling and simulation configs.
         roster:         List of pilot names to simulate.
         bframe_name:    Base frame for flying the trajectories (default is carl).
-        use_flight_recorder:    If True, saves the simulation as a flight recorder object
-        Nln:           Number of lines to print for the summary (default is 65).
+        mode:           Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
+        show_table:     Boolean to print the summary table of flight metrics.
 
     Returns:
         None:          The function saves the simulation data and video to disk.
@@ -82,6 +79,7 @@ def deploy_roster(cohort_name:str,course_name:str,
     table = ru.get_deployment_table()
 
     # Simulate samples across roster
+    Metrics = {}
     for pilot in crew:
         # Load Pilot
         if pilot == "expert":
@@ -95,7 +93,7 @@ def deploy_roster(cohort_name:str,course_name:str,
         tXd = th.TS_to_tXU(Tpd,CPd,None,10)
 
         # Simulate trajectory across samples
-        Trajectories = []
+        trajectories = []
         for idx,(frame,perturbation) in enumerate(zip(Frames,Perturbations)):
             # Unpack rollout variables
             t0,x0 = perturbation["t0"],perturbation["x0"]
@@ -114,31 +112,42 @@ def deploy_roster(cohort_name:str,course_name:str,
                 "tXd":tXd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
-            
-            Trajectories.append(trajectory)
+            trajectories.append(trajectory)
 
-        # Save all trajectory data
-        save_deployments('trajectories',cohort_name,course_name,pilot,Trajectories)
+        # Compile deployment data
+        deployment_data = {
+            "trajectories":trajectories,
+            "video": {"hz":ctl.hz,"images":Iro}
+        }
 
         # Update the metrics table
-        metrics = fh.compute_flight_metrics(Trajectories)
+        metrics = fh.compute_flight_metrics(trajectories)
         table = ru.update_deployment_table(table,pilot,metrics)
         
+        # Update the metrics dictionary
+        Metrics[pilot] = metrics
+
         # Save last trajectory as video/flight recorder
-        if use_flight_recorder:
-            data = (trajectory,Iro)
-            save_deployments('flight_recorder',cohort_name,course_name,pilot,data)
-        else:
-            data = (ctl.hz,Iro)
-            save_deployments('video',cohort_name,course_name,pilot,data)
+        if mode == "visualize":
+            save_deployments(cohort_name,course_name,pilot,deployment_data,
+                             is_generate=False)
+        elif mode == "generate":
+            save_deployments(cohort_name,course_name,pilot,deployment_data,
+                             is_generate=True)
+        elif mode == "evaluate":
+            pass  # No action needed for evaluate mode
             
     # Print the summary table
     if show_table:
         console.print(table)
     
-def save_deployments(mode:Literal['trajectories','video','flight_recorder'],
-                     cohort_name:str,course_name:str,
-                     pilot_name:str,Data:Any) -> None:
+    if mode == "evaluate":
+        return Metrics
+    else:
+        return None
+
+def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_data:dict,
+                     is_generate:bool=False) -> None:
     
     # Some useful path(s)
     workspace_path = os.path.dirname(
@@ -150,30 +159,28 @@ def save_deployments(mode:Literal['trajectories','video','flight_recorder'],
         os.makedirs(deployment_path)
 
     # Save the Data
-    if mode == 'trajectories':
-        trajectories = Data
+    if is_generate:
+        for trajectory in deployment_data["Trajectories"]:
+            Tro:np.ndarray = trajectory["Tro"]
+            Xro:np.ndarray = trajectory["Xro"]
+            Uro:np.ndarray = trajectory["Uro"]
+            Tsol:np.ndarray = trajectory["Tsol"]
+            tXd,obj = trajectory["tXd"],trajectory["obj"]
+            Adv = None
 
-        data_path = os.path.join(deployment_path,"sim_"+course_name+"_"+pilot_name+".pt")
-        torch.save(trajectories,data_path)
-    elif mode == 'video':
-        hz,video = Data[0],Data[1]
-
-        data_path = os.path.join(deployment_path, "sim_"+course_name+"_"+pilot_name+".mp4")
-        gv.images_to_mp4(video,data_path+'.mp4', hz)
-    elif mode == 'flight_recorder':
-        trajectory,images = Data
-
-        Tro:np.ndarray = trajectory["Tro"]
-        Xro:np.ndarray = trajectory["Xro"]
-        Uro:np.ndarray = trajectory["Uro"]
-        Tsol:np.ndarray = trajectory["Tsol"]
-        tXd,obj = trajectory["tXd"],trajectory["obj"]
-        Adv = None
-
-        flight_record = rf.FlightRecorder(
-            Xro.shape[0],Uro.shape[0],
-            20,tXd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
-        flight_record.simulation_import(images,Tro,Xro,Uro,tXd,Tsol,Adv)
-        flight_record.save()
+            flight_record = rf.FlightRecorder(
+                Xro.shape[0],Uro.shape[0],
+                20,tXd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
+            flight_record.simulation_import(images,Tro,Xro,Uro,tXd,Tsol,Adv)
+            flight_record.save()        
     else:
-        raise ValueError(f"Unknown mode '{mode}' for saving deployments.")
+        data_name = "sim_"+course_name+"_"+pilot_name
+        trajectories = deployment_data["Trajectories"]
+        images = deployment_data["video"]["images"]
+        hz = deployment_data["video"]["hz"]
+        
+        trajectories_path = os.path.join(deployment_path,data_name+".pt")
+        video_path = os.path.join(deployment_path,data_name+".mp4")
+
+        torch.save(trajectories,trajectories_path)
+        gv.images_to_mp4(images,video_path+'.mp4', hz)
