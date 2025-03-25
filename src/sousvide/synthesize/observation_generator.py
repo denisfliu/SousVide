@@ -3,7 +3,6 @@ import os
 import torch
 
 import sousvide.synthesize.compress_helper as ch
-import sousvide.synthesize.synthesize_helper as sh
 import sousvide.control.network_helper as nh
 import sousvide.visualize.rich_utilities as ru
 

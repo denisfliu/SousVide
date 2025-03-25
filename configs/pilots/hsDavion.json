@@ -1,10 +1,10 @@
 {
     "networks": {
         "histNet": {
-            "network_type": "sifu",
+            "network_type": "sift",
             "inputs": {
                 "history": [
-                    [ 0, 1, 2, 3, 4],
+                    [0, 1, 2, 3, 4],
                     [
                         "dt",
                         "pz",
@@ -23,8 +23,42 @@
                 }
             },
             "layers": {
-                "hidden_sizes": [64, 32],
-                "histLat_size": 8
+                "d_model": 8,
+                "d_ff": 32,
+                "num_heads": 4,
+                "num_layers": 3
+            }
+        },
+        "commNet": {
+            "network_type": "svnet",
+            "inputs": {
+                "rgb_image": [
+                    ["all"], ["all"], ["r", "g", "b"]
+                ],
+                "current1": [
+                    [
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "histLat": [ ["all"] ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "layers": {
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2,
+                "histLat_size":  8
             }
         }
     },
