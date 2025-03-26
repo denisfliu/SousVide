@@ -9,6 +9,12 @@
             "nf","wx","wy","wz"
         ]
     ],
+    "flight_path": [
+        [ null ],
+        [
+            "L", "R"
+        ]
+    ],
     "features": [
         [ null ],
         [ null ]

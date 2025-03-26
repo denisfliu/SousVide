@@ -29,10 +29,8 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
         f"Network: [bold cyan]{network_name}[/]\n"
         f"{'=' * Nln}"]
 
-    # Create a figure and a set of subplots
-    fig, axs = plt.subplots(1, 3, figsize=(5, 3))
-
     # Plot the losses for each student
+    roster_data,Nplot,xplim = {},0,0
     for student_name in roster:
         try:
             student_path = os.path.join(cohort_path, "roster", student_name)
@@ -45,50 +43,43 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
             continue
 
         # Gather plot data
-        Loss_tn, Loss_tt, Eval_tte, Neps = [], [], [], 0
-        Nd_tn, Nd_tt = [], []
-        T_tn = 0
+        Loss_tn, Loss_tt, Eval_tte, Neps = [], [], [], []
+        Nd_tn, Nd_tt, T_tn = [], [], []
         for loss_data in losses.values():
             # Add the loss data to the lists
             Loss_tn.append(loss_data["Loss_tn"])
             Loss_tt.append(loss_data["Loss_tt"])
-
-            # Add the evaluation data to the list, adjusting for the number of episodes
-            if loss_data["Eval_tte"] is not None:
-                Eval_tte.append(np.array(loss_data["Eval_tte"]))
+            Eval_tte.append(loss_data["Eval_tte"])
 
             # Update the total number of episodes and other metrics
-            Neps += loss_data["N_eps"]
+            Neps.append(loss_data["N_eps"])
 
             # Append the number of data points for training and testing
             Nd_tn.append(loss_data["Nd_tn"])
             Nd_tt.append(loss_data["Nd_tt"])
 
             # Accumulate the training time
-            T_tn += loss_data["t_tn"]
+            T_tn.append(loss_data["t_tn"])
 
-        Loss_tn = np.hstack(Loss_tn)
-        Loss_tt = np.hstack(Loss_tt)
-        Eval_tte = np.vstack(Eval_tte)
+        # Compile the learning data available
+        Neps_tot = np.sum(Neps)
+        Nd_mean = (np.mean(Nd_tn), np.mean(Nd_tt))
+        T_tn_tot = np.sum(T_tn)
+
+        LData = [np.hstack(Loss_tn), np.hstack(Loss_tt)]
+        if Eval_tte:
+            LData.append(np.hstack(Eval_tte))
+
+        roster_data[student_name] = LData
+        Nplot = np.max(Nplot, len(LData))
+        xplim = np.max(xplim, Neps_tot)
 
         # Compute the training time
         student_summary = ru.get_student_summary(
-            student_name, Neps, Nd_tn, Nd_tt,
-            Loss_tn[-1], Loss_tt[-1], Eval_tte[-1,-1], T_tn, Nln
+            student_name, Neps_tot, Nd_mean, T_tn_tot, LData, Nln
         )
 
         learning_summary += student_summary
-
-        # Plot the losses
-        axs[0].plot(Loss_tn, label=student_name)
-        axs[1].plot(Loss_tt, label=student_name)
-
-        axs[2].plot(Eval_tte[:,0],Eval_tte[:,1], label=student_name)
-        axs[2].set_xlim(0, Neps)
-
-        axs[0].set_yscale('log')
-        axs[1].set_yscale('log')
-        axs[2].set_yscale('log')
 
     # Compile the learning summary footer
     learning_summary += [f"{'=' * Nln}"]
@@ -96,19 +87,23 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
     # Print the learning summary
     console.print(*learning_summary)
 
-    axs[0].set_title('Training')
-    axs[0].legend(loc='upper right')
+    # Create a figure and a set of subplots
+    titles = ["Training", "Testing", "TTE"]
+    ylabels = ["Loss (log scale)", "Loss (log scale)", "TTE (m)"]
+    _, axs = plt.subplots(1, Nplot, figsize=(5, 3))
 
-    axs[1].set_title('Testing')
-    axs[1].legend(loc='upper right')
-
-    axs[2].set_title('TTE')
-    axs[2].legend(loc='upper right')
-
-    # Set common labels
-    for ax in axs[0:2]:
-        ax.set(xlabel='Epoch', ylabel='Loss (log scale)')
-    axs[2].set(xlabel='Epoch', ylabel='TTE (m)')
+    # Plot the losses
+    for student_name, LData in roster_data.items():
+        for idx,ldata in enumerate(LData):
+            axs[idx].plot(ldata[0,:],ldata[1,:], label=student_name)
+            
+    for idx in range(Nplot):
+        axs[idx].set_xlim(0, xplim)
+        axs[idx].set_yscale('log')
+        axs[idx].set_title(titles[idx])
+        axs[idx].set_xlabel('Epoch')
+        axs[idx].set_ylabel(ylabels[idx])
+        axs[idx].legend(loc='upper right')
 
     # Adjust layout for better spacing
     plt.tight_layout()

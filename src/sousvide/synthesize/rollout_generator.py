@@ -107,7 +107,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
                 progress.update(sample_task,description=sample_desc2)
 
                 # Save the rollout data
-                save_rollouts(cohort_name,course_name,
+                save_rollouts(cohort_name,course_name,method_name,
                             Trajectories,Images,
                             idx_bt,use_compress)
 
@@ -159,19 +159,18 @@ def generate_rollouts(
     
     # Get console
     console = ru.get_console()
-
-    # Unpack the trajectory
-    Tpd,CPd = ms.solve(course_config)
-    obj = svu.ts_to_obj(Tpd,CPd)
-    tXd = th.TS_to_tXU(Tpd,CPd,None,10)
     
     # Initialize rollout variables
     Trajectories,Images = [],[]
     ctl = VehicleRateMPC(course_config,policy_config)
+    
+    # Unpack the trajectory
+    Tpd,CPd = ms.solve(course_config)
+    obj = svu.ts_to_obj(Tpd,CPd)
+    tXd = th.TS_to_tXU(Tpd,CPd,None,ctl.hz)
 
     # Set the tolerance if undefined
-    if tol_select is None:
-        tol_select = np.inf
+    tol_select = tol_select or np.inf
 
     # Rollout the trajectories
     Ndata = len(Perturbations)
@@ -195,12 +194,12 @@ def generate_rollouts(
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
                 "tXd":tXd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
-                "rollout_id":str(idx_set).zfill(3)+str(idx).zfill(3),
+                "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
 
             images = {
                 "images":Iro,
-                "rollout_id":str(idx_set).zfill(3)+str(idx).zfill(3)
+                "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3)
             }
 
             # Store rollout data
@@ -224,7 +223,7 @@ def generate_rollouts(
             
     return Trajectories,Images
 
-def save_rollouts(cohort_name:str,course_name:str,
+def save_rollouts(cohort_name:str,course_name:str,method_name:str,
                   Trajectories:List[Tuple[np.ndarray,np.ndarray,np.ndarray]],
                   Images:List[torch.Tensor],
                   stack_id:Union[str,int],
@@ -237,6 +236,7 @@ def save_rollouts(cohort_name:str,course_name:str,
     Args:
         cohort_path:    Cohort path.
         course_name:    Name of the course.
+        method_name:    Name of the method used to generate the data.
         Trajectories:   Rollout data.
         Images:         Image data.
         stack_id:       Stack id.
@@ -250,9 +250,9 @@ def save_rollouts(cohort_name:str,course_name:str,
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
     
-    course_path = os.path.join(cohort_path,"rollout_data",course_name)
-    traj_course_path = os.path.join(course_path,"trajectories")
-    imgs_course_path = os.path.join(course_path,"images")
+    dset_path = os.path.join(cohort_path,"rollout_data",course_name+"_"+method_name)
+    traj_course_path = os.path.join(dset_path,"trajectories")
+    imgs_course_path = os.path.join(dset_path,"images")
 
     if not os.path.exists(traj_course_path):
         os.makedirs(traj_course_path)
@@ -261,7 +261,7 @@ def save_rollouts(cohort_name:str,course_name:str,
         os.makedirs(imgs_course_path)
 
     # Save the stacks
-    dset_name = str(stack_id).zfill(3) if type(stack_id) == int else str(stack_id)
+    dset_name = str(stack_id+1).zfill(3) if type(stack_id) == int else str(stack_id)
     traj_path = os.path.join(traj_course_path,"trajectories"+dset_name+".pt")
     imgs_path = os.path.join(imgs_course_path,"images"+dset_name+".pt")
 

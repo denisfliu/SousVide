@@ -1,0 +1,33 @@
+{
+    "duration": null,
+    "reps": 1,
+    "rate": null,
+    "tol_select": null,
+    "randomization": {
+        "parameters": [
+            0.00, 0.00
+        ],
+        "initial": [
+            0.00, 0.00, 0.00,
+            0.00, 0.00, 0.00,
+            0.00, 0.00, 0.00, 0.00
+        ]
+    },
+    "rollout": {
+        "frequency": 100,
+        "delay": 0.0,
+        "external_forces": {
+            "fext01": {
+                "lower": [-10.00,-10.00,-10.00],
+                "upper": [ 10.00, 10.00, 10.00],
+                "mean":  [ -2.00,  0.00,  0.00],
+                "std":   [  0.00,  0.00,  0.00]
+            }
+        },
+        "noise": {
+            "model": null,
+            "sensor": null
+        },
+        "fusion": null
+    }
+}

@@ -259,7 +259,7 @@ def save_observations(cohort_name:str,course_name:str,
             os.makedirs(topic_path)
 
         # Save the observation data
-        data_path = os.path.join(topic_path,"observations"+str(idx_set).zfill(3)+".pt")
+        data_path = os.path.join(topic_path,"observations"+str(idx_set+1).zfill(3)+".pt")
 
         Xnn,Ynn = [],[]
         for observations in Observations:

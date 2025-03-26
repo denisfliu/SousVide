@@ -1,6 +1,10 @@
+import numpy as np
+
 from rich import get_console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
+
+from typing import Tuple,List
 
 console = get_console()
 
@@ -110,28 +114,43 @@ def update_deployment_table(table:Table,pilot:str,metrics:dict):
     return table
 
 def get_student_summary(student:str,
-                        Neps:int,Nd_tn:int,Nd_tt:int,
-                        Loss_tn:float,Loss_tt:float, Eval_tte, T_tn:float,
-                        Nln:int=70) -> str:
+                        Neps_tot:int,Nd_mean:Tuple[int],T_tn_tot:int,
+                        LData:List[np.ndarray],Nln:int=70) -> str:
     
+    # Extract Learning Data
+    loss_tn,loss_tt = LData[0][-1,-1],LData[1][-1,-1]
+    if len(LData) > 2:
+        show_eval = True
+        eval_tte = LData[2][-1,-1]
+    else:
+        show_eval = False
+
     # Compute the training time
-    hours = T_tn // 3600
-    minutes = (T_tn % 3600) // 60
-    seconds = T_tn % 60
+    hours = T_tn_tot // 3600
+    minutes = (T_tn_tot % 3600) // 60
+    seconds = T_tn_tot % 60
 
     # Prepare the summary fields
     student_field = f"Student: [bold cyan]{student}[/]".ljust(31)
-    tepochs_field = f"Epochs: {Neps}".ljust(13)
-    datsize_field = f"Data Size: {Nd_tn[-1]}/{Nd_tt[-1]}"
+    tepochs_field = f"Epochs: {Neps_tot}".ljust(13)
+    datsize_field = f"Data Size: {Nd_mean[0]}/{Nd_mean[1]}"
     tt_time_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s".ljust(17)
-    tn_loss_field = f"[bold green]Train: {Loss_tn:.4f}[/]".ljust(13)
-    tt_loss_field = f"Test: {Loss_tt:.4f}".ljust(12)
-    ev_loss_field = f"[bold bright_green]Eval TTE: {Eval_tte:.2f}[/]".ljust(15)
+    tn_loss_field = f"[bold green]Train: {loss_tn:.4f}[/]".ljust(13)
+    tt_loss_field = f"Test: {loss_tt:.4f}".ljust(12)
+    ev_loss_field = f"[bold bright_green]Eval TTE: {eval_tte:.2f}[/]".ljust(15)
 
     summary = [
             f"{'-' * Nln}\n"
             f"{student_field} | {tepochs_field} | {datsize_field}\n"
-            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field} | {ev_loss_field}"
     ]
+
+    if show_eval:
+        summary.append(
+            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field} | {ev_loss_field}\n"
+        )
+    else:
+        summary.append(
+            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field}\n"
+        )
 
     return summary

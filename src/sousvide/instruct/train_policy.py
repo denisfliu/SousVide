@@ -144,8 +144,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
         # Loss Diagnostics
         epLoss_tn = sum(epLosses_tn)/Ndata_tn
         epLoss_tt = sum(epLosses_tt)/Ndata_tt
-        Loss_tn.append(epLoss_tn)
-        Loss_tt.append(epLoss_tt)
+        Loss_tn.append((ep+1,epLoss_tn))
+        Loss_tt.append((ep+1,epLoss_tt))
         
         # Update the progress bar
         if progress_bar is not None:
@@ -170,12 +170,16 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
                         cohort_name,eval_course,
                         use_deploy,deploy_method,
                         [student_name],mode="evaluate")
-                Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
+                Eval_tte.append(
+                    (ep+1,metric[student_name]["TTE"]["mean"])
+                    )
             else:
-                Eval_tte = None
+                Eval_tte.append([])
 
-            loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
-            loss_entry["Eval_tte"] = Eval_tte
+            # Update the loss entry
+            loss_entry["Loss_tn"] = np.array(Loss_tn).T
+            loss_entry["Loss_tt"] = np.array(Loss_tt).T
+            loss_entry["Eval_tte"] = np.array(Eval_tte).T
             loss_entry["Nd_tn"],loss_entry["Nd_tt"] = Ndata_tn,Ndata_tt
             loss_entry["t_tn"],loss_entry["N_eps"] = t_train,ep+1
 

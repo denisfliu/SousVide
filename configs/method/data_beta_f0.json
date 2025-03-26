@@ -1,8 +1,8 @@
 {
-    "duration": null,
-    "reps": null,
-    "rate": null,
-    "tol_select": null,
+    "duration": 2.0,
+    "reps": 5,
+    "rate": 5,
+    "tol_select": 8e-2,
     "randomization": {
         "parameters": [
             0.50, 2.10
