@@ -5,6 +5,7 @@
             "dt",
             "px","py","pz",
             "vx","vy","vz",
+            "ax","ay","az",
             "qx","qy","qz","qw",
             "nf","wx","wy","wz"
         ]

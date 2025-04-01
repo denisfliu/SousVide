@@ -1,4 +1,5 @@
 {
+    "hz": 20,
     "networks": {
         "histNet": {
             "network_type": "sifu",

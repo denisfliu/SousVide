@@ -164,12 +164,12 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             if use_deploy is not None:
                 # Use test set course
                 eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
-
                 with contextlib.redirect_stdout(io.StringIO()):
                     metric = df.deploy_roster(
-                        cohort_name,eval_course,
-                        use_deploy,deploy_method,
+                        cohort_name,eval_course,use_deploy,deploy_method,
                         [student_name],mode="evaluate")
+                    
+                # Extract the metrics
                 Eval_tte.append(
                     (ep+1,metric[student_name]["TTE"]["mean"])
                     )

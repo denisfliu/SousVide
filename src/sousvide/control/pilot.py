@@ -114,7 +114,7 @@ class Pilot(BaseController):
         self.hy_idx = 0
 
         # Network Input Variables
-        self.tXU = torch.zeros((1,nhy,Ntx+Nu)).to(self.device)          # time/State/Input History
+        self.Dnn = torch.zeros((1,nhy,18)).to(self.device)          # time step/State/Input History
         self.Znn = {key: torch.zeros(1,nhy,Nznn[key]).to(self.device)   # Current Feature Vectors
                    for key in Nznn.keys()}
         
@@ -222,14 +222,19 @@ class Pilot(BaseController):
         """
 
         # Update history data
-        self.tXU[0,self.hy_idx,:] = self.txu_pr     # Update time/State/Input History
-        
-        for network in self.znn_cr:                 # Update Feature Vector History
+        dt0 = self.tx_cr[0,0]-self.txu_pr[0,0]
+        p0,q0 = self.txu_pr[0,1:4],self.txu_pr[0,7:11]
+        v0,v1 = self.txu_pr[0,4:7],self.tx_cr[0,4:7]
+        a0,u0 = (v1-v0)/(dt0+1e-9),self.txu_pr[0,11:15]
+
+        self.Dnn[0,self.hy_idx,:] = torch.hstack((dt0,p0,v0,a0,q0,u0))
+
+        for network in self.znn_cr:                                     # Update Feature Vector History
             self.Znn[network][0,self.hy_idx,:] = self.znn_cr[network]
 
         # Increment History Index
-        self.hy_idx += 1                            # Increment History index
-        if self.hy_idx >= self.tXU.shape[1]:        # If history blocks are full, reset index
+        self.hy_idx += 1                                                # Increment History index
+        if self.hy_idx >= self.Dnn.shape[1]:                           # If history blocks are full, reset index
             self.hy_idx = 0
         
     def decide(self) -> Dict[str,torch.Tensor]:
@@ -240,12 +245,12 @@ class Pilot(BaseController):
             inputs: List of inputs to the neural network model.
         """
 
-        khy,Nhy = self.hy_idx-1,self.tXU.shape[1]
+        khy,Nhy = self.hy_idx-1,self.Dnn.shape[1]
         idx_hy = (torch.arange(Nhy,0,-1)+khy)%Nhy
         
         xnn_im,xnn_ob = self.Img, self.Obj
         xnn_cr = self.tx_cr
-        xnn_hy = self.tXU[:,idx_hy,:]
+        xnn_hy = self.Dnn[:,idx_hy,:]
         xnn_ft = {key: self.Znn[key][:,idx_hy,:] for key in self.Znn.keys()} 
 
         # Generate the inputs to the neural network model

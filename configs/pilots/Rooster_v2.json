@@ -2,16 +2,15 @@
     "hz": 20,
     "networks": {
         "histNet": {
-            "network_type": "sifs",
+            "network_type": "sift",
             "inputs": {
                 "history": [
-                    [ 0, 1, 2, 3, 4],
+                    [0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw",
-                        "nf", "wx", "wy", "wz"
+                        "vz",
+                        "qx", "qw",
+                        "nf"
                     ]
                 ]
             },
@@ -24,9 +23,10 @@
                 }
             },
             "layers": {
-                "shr_hidden_sizes": [32, 16],
-                "mrg_hidden_sizes": [32, 16],
-                "histLat_size": 8
+                "d_model": 8,
+                "d_ff": 32,
+                "num_heads": 4,
+                "num_layers": 2
             }
         },
         "commNet": {

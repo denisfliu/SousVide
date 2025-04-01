@@ -5,7 +5,7 @@ from torch import nn
 from typing import List,Dict,Union
 from sousvide.control.networks.base_net import BaseNet
 
-class SIFT(BaseNet):
+class SIFTv2(BaseNet):
     def __init__(self,
                  inputs:  Dict[str, List[List[Union[int, str]]]],
                  outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
@@ -13,7 +13,7 @@ class SIFT(BaseNet):
                  dropout=0.1,
                  network_type="sift"):
         """
-        Initialize a Sequence Into Features (Transformer) model.
+        Initialize a Sequence Into Features (Transformer) v2 model.
         
         Args:
             inputs:         Inputs config.
@@ -35,7 +35,7 @@ class SIFT(BaseNet):
         """
 
         # Initialize the parent class
-        super(SIFT, self).__init__()
+        super(SIFTv2, self).__init__()
 
         # Extract the inputs
         input_indices = nh.get_io_idxs(inputs)
@@ -44,9 +44,11 @@ class SIFT(BaseNet):
 
         d_model,d_ff = layers["d_model"],layers["d_ff"]
         num_heads,num_layers = layers["num_heads"],layers["num_layers"]
+        hidden_sizes = layers["hidden_sizes"] + [layers["histLat_size"]]
         output_size = nh.get_io_size(label_indices)
 
         # Populate the layers
+        embedding_network = nn.Linear(len(inputs["history"][-1]), d_model)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=num_heads,
@@ -54,11 +56,27 @@ class SIFT(BaseNet):
             dropout=dropout,
             batch_first=True,
             activation='gelu')
+
+        encoder_network = nn.TransformerEncoder(
+            encoder_layer, num_layers=num_layers
+            )
         
+        decoder_networks = []
+        prev_size = d_model
+        for layer_size in hidden_sizes:
+            decoder_networks.append(nn.Linear(prev_size, layer_size))
+            decoder_networks.append(nn.ReLU())
+            decoder_networks.append(nn.Dropout(dropout))
+
+            prev_size = layer_size
+        
+        decoder_networks.append(nn.Linear(prev_size, output_size))
+        decoder_network = nn.Sequential(*decoder_networks)
+
         networks = nn.ModuleDict({
-            "fc_in": nn.Linear(len(inputs["history"][-1]), d_model),
-            "encoder": nn.TransformerEncoder(encoder_layer, num_layers=num_layers),
-            "fc_out": nn.Linear(d_model, output_size)
+            "fc_in": embedding_network,
+            "encoder": encoder_network,
+            "fc_out": decoder_network
         })
 
         # Define the model
@@ -112,7 +130,7 @@ class SIFT(BaseNet):
         znn = self.networks["encoder"](znn)
 
         if self.use_fpass == True:
-            ynn = znn[:,-1,:]
+            ynn = self.networks["fc_out"][:-1](znn[:,-1,:])
         else:
             ynn = self.networks["fc_out"](znn[:,-1,:])
         

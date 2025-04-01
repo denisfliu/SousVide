@@ -30,7 +30,7 @@ def generate_frames(Tsps:np.ndarray,
     """
 
     # TODO: Generalize this to nnio config
-    parameters_key = ["mass","force_normalized"]
+    parameters_key = ["mass","motor_thrust_coeff"]
 
     # Sample Count
     Nsps = len(Tsps)
@@ -56,7 +56,7 @@ def generate_frames(Tsps:np.ndarray,
     return Frames
 
 def generate_perturbations(Tsps:np.ndarray,
-                           Tpd:np.ndarray,CPd:np.ndarray,
+                           tXUd:np.ndarray,
                            initial_bounds:List[float],
                            rng_seed:int=None) -> List[Dict[str,Union[float,np.ndarray]]]:
     """
@@ -68,8 +68,7 @@ def generate_perturbations(Tsps:np.ndarray,
 
     Args:
         Tsps:                   Sample times.
-        Tpd:                    Ideal trajectory times.
-        CPd:                    Ideal trajectory control points.
+        tXUd:                   Ideal trajectory.
         initial_bounds:         Initial state bounds.
         rng_seed:               Random number generator seed.
 
@@ -87,19 +86,13 @@ def generate_perturbations(Tsps:np.ndarray,
     # Unpack the config
     w_x0 = np.array(initial_bounds,dtype=float)
 
-    # Get ideal trajectory for quaternion checking
-    tXUd = th.TS_to_tXU(Tpd,CPd,None,10)
-
     # Generate perturbed starting points    
     Perturbations = []
     for i in range(Nsps):
         # Sample random start time and get corresponding state vector sample
         t0 = Tsps[i]
-        idx0 = np.where(Tpd <= t0)[0][-1]
-        idx0 = min(idx0,(len(Tpd)-2))
-        t00,t0f = Tpd[idx0],Tpd[idx0 + 1]
-
-        x0s = th.ts_to_xu(t0-t00,t0f-t00,CPd[idx0,:,:],None)
+        idx = np.where(tXUd[0,:] <= t0)[0][-1]
+        x0s = tXUd[1:11,idx]
         
         # Perturb state vector sample
         w0 = np.random.uniform(-w_x0,w_x0)
@@ -115,8 +108,8 @@ def generate_perturbations(Tsps:np.ndarray,
     
     return Perturbations
 
-def compute_Tsp_batches(t0:float,tf:float,dt_ro:Union[None,float],
-                        rate:Union[None,int],reps:Union[None,int],Nro_ds:int=None,
+def compute_Tsp_batches(t0:float,tf:float,dt_ro:float,
+                        rate:int,reps:int,Nro_ds:int=None,
                         shuffle:bool=True) -> List[np.ndarray]:
     """
     Compute the sample start times for a given rollout.
@@ -137,11 +130,6 @@ def compute_Tsp_batches(t0:float,tf:float,dt_ro:Union[None,float],
     # Compute the trajectory duration
     dt_tt = tf - t0                                            # Total trajectory duration
     
-    # Catch None value cases
-    dt_ro = dt_ro or dt_tt
-    rate = rate or 1/dt_ro
-    reps = reps or 1
-
     # Compute sample start times and batchify
     Ntp = int(rate*dt_tt)                                       # Number of time points per trajectory
     Nsp = int(reps*Ntp)                                         # Number of sample points (total)

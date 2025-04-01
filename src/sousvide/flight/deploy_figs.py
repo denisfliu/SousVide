@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import os
 
+import figs.utilities.config_helper as ch
 import figs.utilities.trajectory_helper as th
 import figs.visualize.generate_videos as gv
 
@@ -16,8 +17,9 @@ from sousvide.control.pilot import Pilot
 from figs.tsplines import min_snap as ms
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.dynamics.external_forces import ExternalForces
 
-def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str,
+def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
                   roster:List[str],expert_name:str="vrmpc_fr",bframe_name:str="carl",
                   mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
     """"
@@ -31,7 +33,7 @@ def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str
     Args:
         cohort_name:    Directory to store the rollout data (and later the roster of pilots).
         course_name:    Trajectory course to be flown.
-        scene_name:     3D reconstruction of the scene contained as a Gaussian Splat.
+        gsplat_name:    3D reconstruction of the scene contained as a Gaussian Splat.
         method_name:    Data generation method detailing the sampling and simulation configs.
         roster:         List of pilot names to simulate.
         bframe_name:    Base frame for flying the trajectories (default is carl).
@@ -43,73 +45,72 @@ def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str
     """
 
     # Extract configs
-    method_config = svu.load_config(method_name,"method")
-    bframe_config = svu.load_config(bframe_name,"frame")
-    course_config = svu.load_config(course_name,"course")
-
-    # Some usefule intermediate variables
-    crew = ["expert"]+roster              # Add expert to the roster
+    course = ch.get_config(course_name,"courses")
+    gsplat = ch.get_gsplat(gsplat_name)
+    method = ch.get_config(method_name,"methods")
+    expert = ch.get_config(expert_name,"pilots")
+    bframe = ch.get_config(bframe_name,"frames")
     
     # Initialize the simulator
-    sim = Simulator(scene_name,method_config["rollout"])
+    simulator = Simulator(gsplat,method["rollout"])
 
-    # Compute desired trajectory spline
-    output = ms.solve(course_config)
-    if output is not False:
-        Tpd,CPd = output
-    else:
-        raise ValueError("Desired trajectory not feasible. Aborting.")
+    # Compute the desired variables
+    Tsd,FOd = ms.solve(course["waypoints"])["FO"]
+    Fex = ExternalForces(course["forces"])
 
-    # Get the sample start times and end times
-    Tsp_bts = sh.compute_Tsp_batches(
-        Tpd[0], Tpd[-1], method_config["duration"],
-        method_config["rate"], method_config["reps"]
-    )
-    
+    tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
+    obj = svu.tXU_to_obj(tXUd)
+
+    # Get the batch of sample start times
+    t0,tf = Tsd[0],Tsd[-1]
+    dt_ro = method["duration"] or tf-t0
+    rate = method["rate"] or 1/dt_ro
+    reps = method["reps"] or 1
+
+    Tsp_bt = sh.compute_Tsp_batches(t0,tf,dt_ro,rate,reps)[0]
+
     # Generate sample frames and perturbations
     Frames = sh.generate_frames(
-        Tsp_bts[0], bframe_config, method_config["randomization"]["parameters"]
+        Tsp_bt, bframe, method["randomization"]["parameters"]
     )
     Perturbations = sh.generate_perturbations(
-        Tsp_bts[0], Tpd, CPd, method_config["randomization"]["initial"]
+        Tsp_bt, tXUd, method["randomization"]["initial"]
     )
 
     # Initialize the rich variables
     console = ru.get_console()
     table = ru.get_deployment_table()
 
-    # Simulate samples across roster
+
+    # Simulate samples across expert+roster
+    crew = ["expert"]+roster              # Add expert to the roster
+
     Metrics = {}
     for pilot in crew:
         # Load Pilot
         if pilot == "expert":
-            ctl = VehicleRateMPC(course_config,expert_name)
+            controller = VehicleRateMPC(expert,course)
         else:
-            ctl = Pilot(cohort_name,pilot)
-            ctl.set_mode('deploy')
-
-        # Compute ideal trajectory variables
-        obj = svu.ts_to_obj(Tpd,CPd)
-        tXd = th.TS_to_tXU(Tpd,CPd,None,10)
+            controller = Pilot(cohort_name,pilot)
+            controller.set_mode('deploy')
 
         # Simulate trajectory across samples
         trajectories = []
         for idx,(frame,perturbation) in enumerate(zip(Frames,Perturbations)):
             # Unpack rollout variables
             t0,x0 = perturbation["t0"],perturbation["x0"]
-            dt = method_config["duration"] or (Tpd[-1]-Tpd[0])
-            tf = t0+dt
+            tf = t0 + dt_ro
 
-            # Load Frame
-            sim.load_frame(frame)
+            # Update the simulation variables
+            simulator.update_frame(frame)
 
             # Simulate Trajectory
-            Tro,Xro,Uro,Iro,Fro,Tsol = sim.simulate(ctl,t0,tf,x0,obj)
+            Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
 
             # Save Trajectory
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
-                "tXd":tXd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
+                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
             trajectories.append(trajectory)
@@ -117,7 +118,7 @@ def deploy_roster(cohort_name:str,course_name:str,scene_name:str,method_name:str
         # Compile deployment data
         deployment_data = {
             "trajectories":trajectories,
-            "video": {"hz":ctl.hz,"images":Iro}
+            "video": {"hz":controller.hz,"images":Iro}
         }
 
         # Update the metrics table
@@ -165,13 +166,14 @@ def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_d
             Xro:np.ndarray = trajectory["Xro"]
             Uro:np.ndarray = trajectory["Uro"]
             Tsol:np.ndarray = trajectory["Tsol"]
-            tXd,obj = trajectory["tXd"],trajectory["obj"]
+            tXUd,obj = trajectory["tXUd"],trajectory["obj"]
             Adv = None
 
+            hz = int(1/(Tro[1]-Tro[0]))
             flight_record = rf.FlightRecorder(
                 Xro.shape[0],Uro.shape[0],
-                20,tXd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
-            flight_record.simulation_import(images,Tro,Xro,Uro,tXd,Tsol,Adv)
+                hz,tXUd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
+            flight_record.simulation_import(images,Tro,Xro,Uro,tXUd,Tsol,Adv)
             flight_record.save()        
     else:
         data_name = "sim_"+course_name+"_"+pilot_name

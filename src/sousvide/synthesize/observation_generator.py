@@ -2,7 +2,7 @@ import numpy as np
 import os
 import torch
 
-import sousvide.synthesize.compress_helper as ch
+import sousvide.synthesize.data_compress_helper as dch
 import sousvide.control.network_helper as nh
 import sousvide.visualize.rich_utilities as ru
 
@@ -140,10 +140,10 @@ def generate_observations(pilot:Pilot,
         obj,Ndata = traj_data["obj"],traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
         frame = traj_data["frame"]
-        params = [frame["mass"],frame["force_normalized"]]
+        params = [frame["mass"],frame["motor_thrust_coeff"]]
     
         # Decompress and extract the image data if compressed
-        Imgs = ch.decompress_data(imgs_data)["images"]
+        Imgs = dch.decompress_data(imgs_data)["images"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.

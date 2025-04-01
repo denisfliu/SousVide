@@ -2,20 +2,22 @@ import numpy as np
 import os
 import torch
 
+import figs.utilities.config_helper as ch
 import figs.utilities.trajectory_helper as th
 import figs.tsplines.min_snap as ms
 
 import sousvide.synthesize.synthesize_helper as sh
-import sousvide.synthesize.compress_helper as ch
+import sousvide.synthesize.data_compress_helper as dch
 import sousvide.visualize.rich_utilities as ru
 import sousvide.utilities.sousvide_utilities as svu
 
 from typing import Dict,Union,Tuple,List
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.dynamics.external_forces import ExternalForces
 
 def generate_rollout_data(cohort_name:str,course_names:List[str],
-                          scene_name:str,method_name:str,
+                          gsplat_name:str,method_name:str,
                           expert_name:str="vrmpc_fr",bframe_name:str="carl",
                           Nro_ds:int=50,use_compress:bool=False) -> None:
     
@@ -29,7 +31,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
     Args:
         cohort_name:    Directory to store the rollout data (and later the roster of pilots).
         course_names:   List of trajectory courses to be flown.
-        scene_name:     3D reconstruction of the scene contained as a Gaussian Splat.
+        gsplat_name:     3D reconstruction of the scene contained as a Gaussian Splat.
         method_name:    Data generation method detailing the sampling and simulation configs.
         expert_name:    Expert pilot (default is a vrmpc) to fly the trajectories.
         bframe_name:    Base frame for flying the trajectories (default is carl).
@@ -47,34 +49,42 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
     sample_desc2 = "[bold dark_green]Saving dataset...[/]"
 
     # Load configs
-    method_config = svu.load_config(method_name,"method")
-    expert_config = svu.load_config(expert_name,"pilots")
-    bframe_config = svu.load_config(bframe_name,"frame")
-
-    # Initialize the simulator
-    simulator = Simulator(scene_name,method_config["rollout"])
+    gsplat = ch.get_gsplat(gsplat_name)
+    method = ch.get_config(method_name,"methods")
+    expert = ch.get_config(expert_name,"pilots")
+    bframe = ch.get_config(bframe_name,"frames")
 
     # Generate rollouts for each course
     with progress:
         # Initialize sample progress bar
         sample_task = progress.add_task(sample_desc1,total=None,units='samples')
 
+        # Initialize the simulator
+        simulator = Simulator(gsplat,method["rollout"])
+
+        # Cycle through the courses
         for course_name in course_names:
             # Load and name the course_config
-            course_config = svu.load_config(course_name,"course")
+            course = ch.get_config(course_name,"courses")
+            
+            # Compute the desired variables
+            Tsd,FOd = ms.solve(course["waypoints"],expert["hz"])["FO"]
+            Fex = ExternalForces(course["forces"])
+    
+            tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
+            obj = svu.tXU_to_obj(tXUd)
 
-            # Compute desired trajectory
-            output = ms.solve(course_config)
-            if output is not False:
-                Tpd,CPd = output
-            else:
-                raise ValueError("Desired trajectory not feasible. Aborting.")
+            # Update simulation variables
+            simulator.update_forces(course["forces"])
+            controller = VehicleRateMPC(expert,course)
             
             # Get the batches of sample start times
-            Tsp_bts = sh.compute_Tsp_batches(
-                Tpd[0], Tpd[-1], method_config["duration"],
-                method_config["rate"], method_config["reps"], Nro_ds
-            )
+            t0,tf = Tsd[0],Tsd[-1]
+            dt_ro = method["duration"] or tf-t0
+            rate = method["rate"] or 1/dt_ro
+            reps = method["reps"] or 1
+            
+            Tsp_bts = sh.compute_Tsp_batches(t0,tf,dt_ro,rate,reps,Nro_ds)
 
             # Initialize course progress bar
             Ndata = 0
@@ -86,10 +96,10 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
             for idx_bt,Tsp_bt in enumerate(Tsp_bts):
                 # Generate sample frames and perturbations
                 Frames = sh.generate_frames(
-                    Tsp_bt, bframe_config, method_config["randomization"]["parameters"]
+                    Tsp_bt, bframe, method["randomization"]["parameters"]
                 )
                 Perturbations = sh.generate_perturbations(
-                    Tsp_bt, Tpd, CPd, method_config["randomization"]["initial"]
+                    Tsp_bt, tXUd, method["randomization"]["initial"]
                 )
 
                 # Update the samples progress bar config
@@ -98,9 +108,9 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
 
                 # Generate rollout data
                 Trajectories,Images = generate_rollouts(
-                    simulator,course_config,expert_config,
+                    simulator,controller,tXUd,obj,
                     Frames,Perturbations,
-                    method_config["duration"],method_config["tol_select"],
+                    dt_ro,method["tol_select"],
                     idx_bt,sample_bar)
 
                 # Update the observations progress bar
@@ -123,12 +133,12 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
             progress.refresh()
 
 def generate_rollouts(
-        sim:Simulator,
-        course_config:Dict[str,Union[np.ndarray,List[np.ndarray]]],
-        policy_config:Dict[str,Union[int,float,List[float]]],
+        simulator:Simulator,
+        controller:VehicleRateMPC,
+        tXUd:np.ndarray,obj:np.ndarray,
         Frames:Dict[str,Union[np.ndarray,str,int,float]],
         Perturbations:Dict[str,Union[float,np.ndarray]],
-        Tdt_ro:float,tol_select:float,
+        dt_ro:float,tol_select:float,
         idx_set:int,
         progress_bar:Tuple[ru.Progress,int]=None,
         debug:bool=False
@@ -143,14 +153,17 @@ def generate_rollouts(
 
     Args:
         simulator:      Simulator object.
-        course_config:  Course configuration dictionary.
-        policy_config:  Policy configuration dictionary.
+        controller:     Controller object.
+        tXUd:           Trajectory rollout.
+        obj:            Objective vector.
+        course:         Course configuration dictionary.
         Frames:         List of drone configurations.
         Perturbations:  List of perturbed initial states.
-        Tdt_ro:         Rollout duration.
+        dt_ro:          Rollout duration.
         tol_select:     Error tolerance.
         idx_set:        Index of the rollout set.
         progress_bar:   Progress bar (if available).
+        debug:          Debug flag.
 
     Returns:
         Trajectories:   List of trajectory rollouts.
@@ -162,12 +175,6 @@ def generate_rollouts(
     
     # Initialize rollout variables
     Trajectories,Images = [],[]
-    ctl = VehicleRateMPC(course_config,policy_config)
-    
-    # Unpack the trajectory
-    Tpd,CPd = ms.solve(course_config)
-    obj = svu.ts_to_obj(Tpd,CPd)
-    tXd = th.TS_to_tXU(Tpd,CPd,None,ctl.hz)
 
     # Set the tolerance if undefined
     tol_select = tol_select or np.inf
@@ -177,23 +184,22 @@ def generate_rollouts(
     for idx,(frame,perturbation) in enumerate(zip(Frames,Perturbations)):
         # Unpack rollout variables
         t0,x0 = perturbation["t0"],perturbation["x0"]
-        dt = Tdt_ro or (Tpd[-1] - t0)
-        tf = t0 + dt
+        tf = t0 + dt_ro
 
-        # Load the simulation variables
-        sim.load_frame(frame)
-        ctl.update_frame(frame)    
+        # Update the simulation variables
+        simulator.update_frame(frame)
+        controller.update_frame(frame)    
 
         # Simulate the flight
-        Tro,Xro,Uro,Iro,Fro,Tsol = sim.simulate(ctl,t0,tf,x0)
+        Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0)
 
         # Check if the rollout data is useful
-        err = np.min(np.linalg.norm(tXd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
+        err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < tol_select:
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
-                "tXd":tXd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
+                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
 
@@ -250,7 +256,7 @@ def save_rollouts(cohort_name:str,course_name:str,method_name:str,
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
     
-    dset_path = os.path.join(cohort_path,"rollout_data",course_name+"_"+method_name)
+    dset_path = os.path.join(cohort_path,"rollout_data",course_name)
     traj_course_path = os.path.join(dset_path,"trajectories")
     imgs_course_path = os.path.join(dset_path,"images")
 
@@ -266,7 +272,7 @@ def save_rollouts(cohort_name:str,course_name:str,method_name:str,
     imgs_path = os.path.join(imgs_course_path,"images"+dset_name+".pt")
 
     if use_compress:
-        Images = ch.compress_data(Images)
+        Images = dch.compress_data(Images)
 
     torch.save(Trajectories,traj_path)
     torch.save(Images,imgs_path)

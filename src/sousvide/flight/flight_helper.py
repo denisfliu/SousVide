@@ -9,7 +9,7 @@ def compute_flight_metrics(Trajectories:List[dict],pp_threshold:float=0.3) -> No
     for trajectory in Trajectories:
         # Extract trajectory data
         Pro:np.ndarray = trajectory["Xro"][0:3,:]
-        Pds:np.ndarray = trajectory["tXd"][1:4,:]
+        Pds:np.ndarray = trajectory["tXUd"][1:4,:]
         Ndata = trajectory["Ndata"]
 
         # Initialize the TTE for this trajectory

@@ -3,8 +3,8 @@
     "massless_inertia": [0.019416,0.019416,0.036816],
     "arm_front": [0.075,0.100],
     "arm_back" : [0.075,0.100],
-    "force_normalized" : 6.90,
-    "torque_gain": 0.040,
+    "motor_thrust_coeff": 6.90,
+    "motor_torque_coeff": 0.69,
     "number_of_rotors": 4,
     "camera_to_body_transform":
     [

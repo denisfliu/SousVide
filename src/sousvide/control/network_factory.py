@@ -9,6 +9,7 @@ from sousvide.control.networks.mlp import MLP
 from sousvide.control.networks.sifu import SIFU
 from sousvide.control.networks.sifs import SIFS
 from sousvide.control.networks.sift import SIFT
+from sousvide.control.networks.siftv2 import SIFTv2
 from sousvide.control.networks.sqfe import SqFE
 from sousvide.control.networks.hpcn import HPCN
 from sousvide.control.networks.svcn import SVCN
@@ -55,6 +56,8 @@ def generate_network(
             network = SIFS(**net_config)
         elif network_type == "sift":
             network = SIFT(**net_config)
+        elif network_type == "siftv2":
+            network = SIFTv2(**net_config)
         # Command Networks
         elif network_type == "svcn":
             network = SVCN(**net_config)

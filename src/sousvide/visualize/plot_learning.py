@@ -38,8 +38,12 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
 
             losses: dict = torch.load(losses_path)
         except:
-            console.print(f"{'-' * Nln}\n"
-                          f"Student [bold cyan]{student_name}[/bold cyan] does not have a [bold cyan]{network_name}[/bold cyan].")
+            student_summary = [
+                f"{'-' * Nln}\n"
+                f"Student [bold cyan]{student_name}[/] does not have a [bold cyan]{network_name}[/].\n"
+            ]
+            learning_summary += student_summary
+            
             continue
 
         # Gather plot data
@@ -71,8 +75,8 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
             LData.append(np.hstack(Eval_tte))
 
         roster_data[student_name] = LData
-        Nplot = np.max(Nplot, len(LData))
-        xplim = np.max(xplim, Neps_tot)
+        Nplot = np.max((Nplot,len(LData)))
+        xplim = np.max((xplim, Neps_tot))
 
         # Compute the training time
         student_summary = ru.get_student_summary(
@@ -90,26 +94,28 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
     # Create a figure and a set of subplots
     titles = ["Training", "Testing", "TTE"]
     ylabels = ["Loss (log scale)", "Loss (log scale)", "TTE (m)"]
-    _, axs = plt.subplots(1, Nplot, figsize=(5, 3))
 
-    # Plot the losses
-    for student_name, LData in roster_data.items():
-        for idx,ldata in enumerate(LData):
-            axs[idx].plot(ldata[0,:],ldata[1,:], label=student_name)
-            
-    for idx in range(Nplot):
-        axs[idx].set_xlim(0, xplim)
-        axs[idx].set_yscale('log')
-        axs[idx].set_title(titles[idx])
-        axs[idx].set_xlabel('Epoch')
-        axs[idx].set_ylabel(ylabels[idx])
-        axs[idx].legend(loc='upper right')
+    if Nplot > 0:
+        _, axs = plt.subplots(1, Nplot, figsize=(5, 3))
 
-    # Adjust layout for better spacing
-    plt.tight_layout()
+        # Plot the losses
+        for student_name, LData in roster_data.items():
+            for idx,ldata in enumerate(LData):
+                axs[idx].plot(ldata[0,:],ldata[1,:], label=student_name)
+                
+        for idx in range(Nplot):
+            axs[idx].set_xlim(0, xplim)
+            axs[idx].set_yscale('log')
+            axs[idx].set_title(titles[idx])
+            axs[idx].set_xlabel('Epoch')
+            axs[idx].set_ylabel(ylabels[idx])
+            axs[idx].legend(loc='upper right')
 
-    # Show the plots
-    plt.show(block=False)
+        # Adjust layout for better spacing
+        plt.tight_layout()
+
+        # Show the plots
+        plt.show(block=False)
 
 def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
     """
