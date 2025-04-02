@@ -38,7 +38,7 @@ def get_training_progress() -> Progress:
         TextColumn("{task.description} | [bold dark_green]Loss[/]: [dark_green]{task.fields[loss]:.4f}[/]"),
         BarColumn(),
         TextColumn("[bold green3] {task.completed:>2}/{task.total} {task.fields[units]}"),
-        TimeRemainingColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
     )
     return progress
@@ -124,6 +124,7 @@ def get_student_summary(student:str,
         eval_tte = LData[2][-1,-1]
     else:
         show_eval = False
+        eval_tte = np.inf
 
     # Compute the training time
     hours = T_tn_tot // 3600

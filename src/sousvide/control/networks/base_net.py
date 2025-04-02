@@ -38,7 +38,7 @@ class BaseNet(nn.Module, ABC):
         
         self.use_fpass:bool = True
         self.Nznn:Union[int,Dict[str,List[int]]] = None
-        self.nhy:int = None
+        self.nhy:int = 1
 
     @abstractmethod
     def forward(self, x) -> torch.Tensor:

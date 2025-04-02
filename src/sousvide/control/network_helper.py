@@ -136,7 +136,7 @@ def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,Lis
 
 def extract_io(io_srcs:Dict[str,torch.Tensor],
                io_idxs:Union[None,Dict[str,List[Union[slice,torch.Tensor]]]],
-               use_tensor:bool=False) -> Dict[str,List[torch.Tensor]]:
+               use_tensor:bool=False,flatten:bool=False) -> Dict[str,List[torch.Tensor]]:
     """
     Extract the inputs/outputs from the input/output tensor. The first dimension of the tensor is
     assumed to be the batch dimension and hence is left untouched.
@@ -144,7 +144,9 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
     Args:
         io_dict:    Input/Output dictionary tensor.
         io_idxs:    Dictionary of indices of the inputs/outputs.
-        
+        use_tensor: If True, return a tensor of the inputs/outputs. If False, return a list.
+        flatten:    If True, flatten the non-batch dimensions of the inputs/outputs.
+
     Returns:
         xnn:        List/tensor of extracted inputs.
     """
@@ -181,5 +183,9 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
     # Convert to tensor if requested
     if use_tensor:
         xnn = torch.cat(xnn)
+
+    # Flatten the non-batch dimensions if requested
+    if flatten:
+        xnn = torch.flatten(xnn, start_dim=1)
 
     return xnn

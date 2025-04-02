@@ -9,7 +9,7 @@
                 ],
                 "current": [
                     [
-                        "pz",
+                        "px", "py", "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]

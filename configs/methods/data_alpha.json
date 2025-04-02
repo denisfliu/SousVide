@@ -1,7 +1,7 @@
 {
     "duration": 2.0,
     "reps": 5,
-    "rate": 3,
+    "rate": 4,
     "tol_select": 8e-2,
     "randomization": {
         "parameters": [

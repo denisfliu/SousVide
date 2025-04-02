@@ -9,7 +9,7 @@
                 ],
                 "current": [
                     [
-                        "pz",
+                        "px", "py", "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
@@ -17,14 +17,14 @@
             },
             "outputs": {
                 "flight_path": [
-                    [0, 10, 20, 30, 40],
+                    [0, 5, 10, 15, 20, 25, 30, 35, 40],
                     [
                         "Lu", "Lv", "Ru", "Rv"
                     ]
                 ]
             },
             "layers": {
-                "hidden_sizes": [512, 128, 32],
+                "hidden_sizes": [512, 256, 128, 64],
                 "augment_layer": 1
             }
         }

@@ -53,7 +53,8 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
             # Add the loss data to the lists
             Loss_tn.append(loss_data["Loss_tn"])
             Loss_tt.append(loss_data["Loss_tt"])
-            Eval_tte.append(loss_data["Eval_tte"])
+            if loss_data["Eval_tte"]:
+                Eval_tte.append(loss_data["Eval_tte"])
 
             # Update the total number of episodes and other metrics
             Neps.append(loss_data["N_eps"])
@@ -150,7 +151,7 @@ def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot
         # Plot the trajectories for each pilot
         if plot_show:
             console.print(f"Plotting trajectories for [bold cyan]{pilot}[/]...")
-            p3.RO_to_3D(Trajectories,plot_last=True)
+            p3.RO_to_3D(Trajectories,n=40,plot_last=True)
 
     # Print the summary table
     console.print(table)

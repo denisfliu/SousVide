@@ -51,9 +51,6 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     expert = ch.get_config(expert_name,"pilots")
     bframe = ch.get_config(bframe_name,"frames")
     
-    # Initialize the simulator
-    simulator = Simulator(gsplat,method["rollout"])
-
     # Compute the desired variables
     Tsd,FOd = ms.solve(course["waypoints"])["FO"]
     Fex = ExternalForces(course["forces"])
@@ -81,9 +78,12 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     console = ru.get_console()
     table = ru.get_deployment_table()
 
-
     # Simulate samples across expert+roster
-    crew = ["expert"]+roster              # Add expert to the roster
+    crew = ["expert"]+roster
+    
+    # Initialize the simulator
+    simulator = Simulator(gsplat,method["rollout"])
+    simulator.update_forces(course["forces"])
 
     Metrics = {}
     for pilot in crew:
@@ -107,9 +107,12 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
             # Simulate Trajectory
             Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
 
+            # Compute the rUV
+            rUV = sh.generate_edge_projections(Tro,Xro,tXUd,simulator.conFiG["frame"])
+
             # Save Trajectory
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,"rUV":rUV,
                 "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
@@ -161,7 +164,7 @@ def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_d
 
     # Save the Data
     if is_generate:
-        for trajectory in deployment_data["Trajectories"]:
+        for trajectory in deployment_data["trajectories"]:
             Tro:np.ndarray = trajectory["Tro"]
             Xro:np.ndarray = trajectory["Xro"]
             Uro:np.ndarray = trajectory["Uro"]
@@ -177,7 +180,7 @@ def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_d
             flight_record.save()        
     else:
         data_name = "sim_"+course_name+"_"+pilot_name
-        trajectories = deployment_data["Trajectories"]
+        trajectories = deployment_data["trajectories"]
         images = deployment_data["video"]["images"]
         hz = deployment_data["video"]["hz"]
         
@@ -185,4 +188,4 @@ def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_d
         video_path = os.path.join(deployment_path,data_name+".mp4")
 
         torch.save(trajectories,trajectories_path)
-        gv.images_to_mp4(images,video_path+'.mp4', hz)
+        gv.images_to_mp4(images,video_path, hz)

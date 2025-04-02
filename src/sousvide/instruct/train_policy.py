@@ -134,7 +134,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             # Testing
             for input,label in dataloader:
                 # Forward Pass
-                prediction = network(*input)
+                prediction = network(*input)    
                 loss = criterion(prediction,label)
 
                 # Save loss logs

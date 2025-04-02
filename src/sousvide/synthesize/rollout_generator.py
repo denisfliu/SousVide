@@ -14,7 +14,9 @@ import sousvide.utilities.sousvide_utilities as svu
 from typing import Dict,Union,Tuple,List
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
+import figs.dynamics.quadcopter_specifications as qs
 from figs.dynamics.external_forces import ExternalForces
+import figs.visualize.generate_videos as gv
 
 def generate_rollout_data(cohort_name:str,course_names:List[str],
                           gsplat_name:str,method_name:str,
@@ -170,6 +172,7 @@ def generate_rollouts(
         Images:         List of image rollouts.
     """
     
+
     # Get console
     console = ru.get_console()
     
@@ -196,9 +199,12 @@ def generate_rollouts(
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < tol_select:
+            # Compute the rUV
+            rUV = sh.generate_edge_projections(Tro,Xro,tXUd,simulator.conFiG["frame"])
+        
             # Package the rollout data
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,"rUV":rUV,
                 "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}

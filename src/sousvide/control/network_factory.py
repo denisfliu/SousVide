@@ -11,6 +11,7 @@ from sousvide.control.networks.sifs import SIFS
 from sousvide.control.networks.sift import SIFT
 from sousvide.control.networks.siftv2 import SIFTv2
 from sousvide.control.networks.sqfe import SqFE
+from sousvide.control.networks.tracenet import TraceNet
 from sousvide.control.networks.hpcn import HPCN
 from sousvide.control.networks.svcn import SVCN
 from sousvide.control.networks.svnet import SVNet
@@ -49,6 +50,8 @@ def generate_network(
         # Feature Extractors
         elif network_type == "sqfe":
             network = SqFE(**net_config)
+        elif network_type == "tracenet":
+            network = TraceNet(**net_config)
         # History Networks
         elif network_type == "sifu":
             network = SIFU(**net_config)

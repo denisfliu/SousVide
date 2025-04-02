@@ -3,7 +3,6 @@ Helper functions for data synthesis.
 """
 
 import numpy as np
-import numpy as np
 
 from PIL import Image
 from io import BytesIO

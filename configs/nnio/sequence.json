@@ -13,7 +13,7 @@
     "flight_path": [
         [ null ],
         [
-            "L", "R"
+            "Lu", "Lv", "Ru", "Rv"
         ]
     ],
     "features": [

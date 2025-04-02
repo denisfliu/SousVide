@@ -24,7 +24,7 @@
                 ]
             },
             "layers": {
-                "hidden_sizes": [512, 128, 32],
+                "hidden_sizes": [512, 256, 512, 128, 32],
                 "augment_layer": 1
             }
         }
