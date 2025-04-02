@@ -96,7 +96,7 @@ class Policy(BaseNet):
 
             # Forward Pass through the Network
             ynn_net = network(*xnn_net)
-
+            
             # Update xnn_srcs
             xnn_srcs[xnn_key] = ynn_net
 

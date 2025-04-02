@@ -17,7 +17,7 @@
             },
             "outputs": {
                 "flight_path": [
-                    [0, 10, 20, 30, 40],
+                    [0, 1, 2, 3, 4],
                     [
                         "Lu", "Lv", "Ru", "Rv"
                     ]
@@ -26,6 +26,26 @@
             "layers": {
                 "hidden_sizes": [512, 128, 32],
                 "augment_layer": 1
+            }
+        },
+        "commNet": {
+            "network_type": "pathnet",
+            "inputs": {
+                "current": [
+                    [
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "layers": {
+                "hidden_sizes": [30, 30]
             }
         }
     },

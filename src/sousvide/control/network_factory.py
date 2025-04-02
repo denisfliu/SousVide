@@ -15,6 +15,7 @@ from sousvide.control.networks.tracenet import TraceNet
 from sousvide.control.networks.hpcn import HPCN
 from sousvide.control.networks.svcn import SVCN
 from sousvide.control.networks.svnet import SVNet
+from sousvide.control.networks.pathnet import PathNet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -68,6 +69,8 @@ def generate_network(
             network = HPCN(**net_config)
         elif network_type == "svnet":
             network = SVNet(**net_config)
+        elif network_type == "pathnet":
+            network = PathNet(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

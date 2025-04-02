@@ -194,15 +194,11 @@ def generate_edge_projections(Tro:np.ndarray,Xro:np.ndarray,tXUd:np.ndarray,
         # Current time and state
         tcr,xcr = Tro[i], Xro[:,i]
 
-        # # ==========================
-        # # TODO: Restore this
-        # # Extract horizon states from the ideal trajectory
-        # if tcr < tXUd[0,-1]:
-        #     idx = np.where(tcr < tXUd[0,:])[0][0]  # Find the last index where tcr is less than tXUd
-        # else:
-        #     idx = tXUd.shape[1] - 1
-        idx = tXUd.shape[1] - 1
-        # ===========================
+        # Extract horizon states from the ideal trajectory
+        if tcr < tXUd[0,-1]:
+            idx = np.where(tcr < tXUd[0,:])[0][0]  # Find the last index where tcr is less than tXUd
+        else:
+            idx = tXUd.shape[1] - 1
         
         idx += Nbff          
         idxs = np.clip(np.arange(idx,idx+Nhn), 0, tXUd.shape[1]-1)

@@ -49,12 +49,21 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
         # Gather plot data
         Loss_tn, Loss_tt, Eval_tte, Neps = [], [], [], []
         Nd_tn, Nd_tt, T_tn = [], [], []
+        ep_tn, ep_tt, ep_tte = 0, 0, 0
         for loss_data in losses.values():
             # Add the loss data to the lists
-            Loss_tn.append(loss_data["Loss_tn"])
-            Loss_tt.append(loss_data["Loss_tt"])
+            loss_tn,loss_tt = loss_data["Loss_tn"],loss_data["Loss_tt"]
+
+            loss_tn[0,:] += ep_tn
+            loss_tt[0,:] += ep_tt
+
+            Loss_tn.append(loss_tn)
+            Loss_tt.append(loss_tt)
+            
             if loss_data["Eval_tte"]:
-                Eval_tte.append(loss_data["Eval_tte"])
+                eval_tte = loss_data["Eval_tte"]
+                eval_tte[0,:] += ep_tte
+                Eval_tte.append(eval_tte)
 
             # Update the total number of episodes and other metrics
             Neps.append(loss_data["N_eps"])
@@ -65,6 +74,11 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
 
             # Accumulate the training time
             T_tn.append(loss_data["t_tn"])
+
+            # Update the episode counters
+            ep_tn += loss_data["N_eps"]
+            ep_tt += loss_data["N_eps"]
+            ep_tte += loss_data["N_eps"]
 
         # Compile the learning data available
         Neps_tot = np.sum(Neps)

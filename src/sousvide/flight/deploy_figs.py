@@ -20,7 +20,9 @@ from figs.control.vehicle_rate_mpc import VehicleRateMPC
 from figs.dynamics.external_forces import ExternalForces
 
 def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
-                  roster:List[str],expert_name:str="vrmpc_fr",bframe_name:str="carl",
+                  roster:List[str],
+                  expert_name:str="vrmpc_fr",expert_course_name:str=None,
+                  bframe_name:str="carl",
                   mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
     """"
     Simulate a roster of pilots on a given course within a given scene on
@@ -31,14 +33,16 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     video output for the last trajectory for each pilot. 
     
     Args:
-        cohort_name:    Directory to store the rollout data (and later the roster of pilots).
-        course_name:    Trajectory course to be flown.
-        gsplat_name:    3D reconstruction of the scene contained as a Gaussian Splat.
-        method_name:    Data generation method detailing the sampling and simulation configs.
-        roster:         List of pilot names to simulate.
-        bframe_name:    Base frame for flying the trajectories (default is carl).
-        mode:           Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
-        show_table:     Boolean to print the summary table of flight metrics.
+        cohort_name:        Directory to store the rollout data (and later the roster of pilots).
+        course_name:        Trajectory course to be flown.
+        gsplat_name:        3D reconstruction of the scene contained as a Gaussian Splat.
+        method_name:        Data generation method detailing the sampling and simulation configs.
+        roster:             List of pilot names to simulate.
+        expert_name:        Name of the expert pilot to be used for the simulation.
+        expert_course_name: Name of the course to be used for the expert pilot (default is None).
+        bframe_name:        Base frame for flying the trajectories (default is carl).
+        mode:               Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
+        show_table:         Boolean to print the summary table of flight metrics.
 
     Returns:
         None:          The function saves the simulation data and video to disk.
@@ -51,6 +55,11 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     expert = ch.get_config(expert_name,"pilots")
     bframe = ch.get_config(bframe_name,"frames")
     
+    if expert_course_name is not None:
+        expert_course = ch.get_config(expert_course_name,"courses")
+    else:
+        expert_course = course
+
     # Compute the desired variables
     Tsd,FOd = ms.solve(course["waypoints"])["FO"]
     Fex = ExternalForces(course["forces"])
@@ -89,7 +98,7 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     for pilot in crew:
         # Load Pilot
         if pilot == "expert":
-            controller = VehicleRateMPC(expert,course)
+            controller = VehicleRateMPC(expert,expert_course)
         else:
             controller = Pilot(cohort_name,pilot)
             controller.set_mode('deploy')
