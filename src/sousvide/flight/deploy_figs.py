@@ -21,7 +21,7 @@ from figs.dynamics.external_forces import ExternalForces
 
 def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
                   roster:List[str],
-                  expert_name:str="vrmpc_fr",expert_course_name:str=None,
+                  expert_name:str="vrmpc_fr",expert_cname:str=None,
                   bframe_name:str="carl",
                   mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
     """"
@@ -33,19 +33,19 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     video output for the last trajectory for each pilot. 
     
     Args:
-        cohort_name:        Directory to store the rollout data (and later the roster of pilots).
-        course_name:        Trajectory course to be flown.
-        gsplat_name:        3D reconstruction of the scene contained as a Gaussian Splat.
-        method_name:        Data generation method detailing the sampling and simulation configs.
-        roster:             List of pilot names to simulate.
-        expert_name:        Name of the expert pilot to be used for the simulation.
-        expert_course_name: Name of the course to be used for the expert pilot (default is None).
-        bframe_name:        Base frame for flying the trajectories (default is carl).
-        mode:               Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
-        show_table:         Boolean to print the summary table of flight metrics.
+        cohort_name:    Directory to store the rollout data (and later the roster of pilots).
+        course_name:    Trajectory course to be flown.
+        gsplat_name:    3D reconstruction of the scene contained as a Gaussian Splat.
+        method_name:    Data generation method detailing the sampling and simulation configs.
+        roster:         List of pilot names to simulate.
+        expert_name:    Name of the expert pilot to be used for the simulation.
+        expert_cname:   Name of the course to be used for the expert pilot (default is None).
+        bframe_name:    Base frame for flying the trajectories (default is carl).
+        mode:           Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
+        show_table:     Boolean to print the summary table of flight metrics.
 
     Returns:
-        None:          The function saves the simulation data and video to disk.
+        None:           The function saves the simulation data and video to disk.
     """
 
     # Extract configs
@@ -55,8 +55,8 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     expert = ch.get_config(expert_name,"pilots")
     bframe = ch.get_config(bframe_name,"frames")
     
-    if expert_course_name is not None:
-        expert_course = ch.get_config(expert_course_name,"courses")
+    if expert_cname is not None:
+        expert_course = ch.get_config(expert_cname,"courses")
     else:
         expert_course = course
 

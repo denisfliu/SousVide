@@ -60,7 +60,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
             Loss_tn.append(loss_tn)
             Loss_tt.append(loss_tt)
             
-            if loss_data["Eval_tte"]:
+            if any(loss_data["Eval_tte"]):
                 eval_tte = loss_data["Eval_tte"]
                 eval_tte[0,:] += ep_tte
                 Eval_tte.append(eval_tte)

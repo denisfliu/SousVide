@@ -24,6 +24,9 @@
     "parameters": [
         [ "m","kt" ]
     ],
+    "forces": [
+        [ "fx","fy","fz" ]
+    ],
     "histLat": [
         [null]
     ],

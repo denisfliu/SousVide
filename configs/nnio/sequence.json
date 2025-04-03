@@ -20,7 +20,7 @@
         [ null ],
         [ null ]
     ],
-    "forces": [
+    "forces_set": [
         [ null ],
         [ "fx","fy","fz" ]
     ],
