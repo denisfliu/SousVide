@@ -115,43 +115,35 @@ def update_deployment_table(table:Table,pilot:str,metrics:dict):
 
 def get_student_summary(student:str,
                         Neps_tot:int,Nd_mean:Tuple[int],T_tn_tot:int,
-                        LData:List[np.ndarray],Nln:int=70) -> str:
+                        loss_tn:float,loss_tt:float,eval_tte:float|None,
+                        Nln:int=70) -> str:
     
-    # Extract Learning Data
-    loss_tn,loss_tt = LData[0][-1,-1],LData[1][-1,-1]
-    if len(LData) > 2:
-        show_eval = True
-        eval_tte = LData[2][-1,-1]
-    else:
-        show_eval = False
-        eval_tte = np.inf
-
     # Compute the training time
     hours = T_tn_tot // 3600
     minutes = (T_tn_tot % 3600) // 60
     seconds = T_tn_tot % 60
 
-    # Prepare the summary fields
-    student_field = f"Student: [bold cyan]{student}[/]".ljust(31)
-    tepochs_field = f"Epochs: {Neps_tot}".ljust(13)
+    # Summary First Line
+    student_field = f"Student: [bold cyan]{student}[/]"
+    tepochs_field = f"Epochs: {Neps_tot}"
     datsize_field = f"Data Size: {Nd_mean[0]}/{Nd_mean[1]}"
-    tt_time_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s".ljust(17)
-    tn_loss_field = f"[bold green]Train: {loss_tn:.4f}[/]".ljust(13)
-    tt_loss_field = f"Test: {loss_tt:.4f}".ljust(12)
-    ev_loss_field = f"[bold bright_green]Eval TTE: {eval_tte:.2f}[/]".ljust(15)
 
-    summary = [
+    summary = (
             f"{'-' * Nln}\n"
-            f"{student_field} | {tepochs_field} | {datsize_field}\n"
-    ]
+            f"{student_field:<33} | {tepochs_field:<13} | {datsize_field:<40}\n"
+    )
 
-    if show_eval:
-        summary.append(
-            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field} | {ev_loss_field}\n"
-        )
+    # Summary Second Line
+    t_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
+    tn_field = f"[bold bright_green]Train: {loss_tn:.4f}[/]"
+    tt_field = f"Test: {loss_tt:.4f}"
+
+    if eval_tte is not None:
+        ev_field = f"[bold bright_green]Eval TTE: {eval_tte:.2f}[/]"
+        eval_field = (f"{t_field:<19} | {tn_field:<35} | {tt_field:<10} | {ev_field}\n")
     else:
-        summary.append(
-            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field}\n"
-        )
+        eval_field = (f"{t_field:<19} | {tn_field:<35} | {tt_field:<10}\n")
 
+    summary += eval_field            
+    
     return summary
