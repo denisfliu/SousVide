@@ -26,7 +26,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,
     # Compile the learning summary header
     learning_summary = (
         f"{'=' * Nln}\n"
-        f"Cohort : [bold cyan]{cohort_name}[/]\t\t\t"
+        f"Cohort : [bold cyan]{cohort_name}[/]\t\t"
         f"Network: [bold cyan]{network_name}[/]\n"
         f"{'=' * Nln}\n")
 

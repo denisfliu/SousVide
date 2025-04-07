@@ -72,7 +72,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
             # Compute the desired variables
             Tsd,FOd = ms.solve(course["waypoints"],expert["hz"])["FO"]
             Fex = ExternalForces(course["forces"])
-    
+            
             tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
             obj = svu.tXU_to_obj(tXUd)
 

@@ -20,7 +20,7 @@ def get_generation_progress() -> Progress:
         TextColumn("{task.description}"),
         BarColumn(),
         TextColumn("[bold green3] {task.completed:>2}/{task.total} {task.fields[units]}"),
-        TimeRemainingColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
     )
     return progress
