@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import figs.utilities.transform_helper as th
 import sousvide.visualize.plot_utilities as pu
 
-from typing import Dict,Union,Tuple,List
+from typing import Dict,Union,List
 
 def tXU_to_3D(tXU_list:List[np.ndarray],
               WPs:np.ndarray=None,tXUd:np.ndarray=None,
@@ -56,29 +57,6 @@ def tXU_to_3D(tXU_list:List[np.ndarray],
         ax.plot(tXUd[1,:], tXUd[2,:], tXUd[3,:],color='k', linestyle='--',linewidth=0.8)
 
     plt.show(block=False)
-
-def CP_to_3D(Tp:List[np.ndarray],CP:List[np.ndarray],
-                hz:int=20,scale:float=1.0,n:int=500,plot_last:bool=False):
-
-    """"
-    Plot the trajectory in 3D space from control point rollout."
-    """
-
-    # Unpack the trajectory
-    tXU_list:List[np.ndarray] = []
-    WPs = np.zeros((3,len(Tp)))
-    for i in range(len(Tp)):
-        T,X = pu.unpack_trajectory(Tp[i],CP[i],hz)
-        U = np.zeros((3,X.shape[1]))
-
-        tXU = np.vstack((T,X,U))
-        tXU_list.append(tXU)
-        WPs[0,i] = CP[i][0,0]
-        WPs[1,i] = CP[i][1,0]
-        WPs[2,i] = CP[i][2,0]
-
-    # Plot the trajectory
-    tXU_to_3D(tXU_list,WPs=WPs,scale=scale,n=n,plot_last=plot_last)
 
 def RO_to_3D(RO:List[Dict[str,Union[np.ndarray,int]]],
               n:int=500,scale=1.0,plot_last:bool=False):
