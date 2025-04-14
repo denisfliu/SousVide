@@ -3,13 +3,6 @@ Helper functions for sous vide.
 """
 
 import numpy as np
-import numpy as np
-import json
-import os
-import figs.utilities.trajectory_helper as th
-
-from typing import Dict,Union
-
 
 def tXU_to_obj(tXU:np.ndarray) -> np.ndarray:
     """

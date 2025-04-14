@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import figs.utilities.trajectory_helper as th
 import sousvide.visualize.plot_utilities as pu
 
 from typing import Dict,Union,List

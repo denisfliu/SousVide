@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
-import figs.utilities.trajectory_helper as th
+import figs.utilities.transform_helper as th
+import figs.utilities.orientation_helper as oh
 
 from typing import Tuple,List
 
@@ -34,51 +35,6 @@ def get_plot_limits(XX:List[np.ndarray],
     x_max += delta
     
     return x_min,x_max
-
-def unpack_trajectory(Tp:np.ndarray,CP:np.ndarray,hz:int,
-                      mode:str='time',trim:bool=True) -> Tuple[np.ndarray,np.ndarray]:
-    """
-    Unpack the trajectory from the control points.
-    """
-
-    # Unpack the trajectory
-    Nt = int(Tp[-1]*hz+1)
-    T = np.zeros(Nt)
-
-    if mode == 'time':
-        X = np.zeros((13,Nt))
-    else:
-        X = np.zeros((Nt,4,12))
-        
-    idx = 0
-    for k in range(Nt):
-        tk = Tp[0]+k/hz
-
-        if trim == True:
-            tk = np.minimum(Tp[-1],tk)
-        if tk > Tp[idx+1] and idx < len(Tp)-2:
-            idx += 1
-
-        t0,tf = Tp[idx],Tp[idx+1]
-        fo = th.ts_to_fo(tk-t0,tf-t0,CP[idx,:,:])
-
-        T[k] = tk
-        if mode == 'time':
-            X[:,k] = th.fo_to_xu(fo)[0:13]
-        else:
-            X[k,:,:] = fo
-
-    # Ensure continuity of the quaternion
-    if mode == 'time':
-        qr = np.array([0.0,0.0,0.0,1.0])
-        for k in range(Nt):
-            q = X[6:10,k]
-            qc = th.obedient_quaternion(q,qr)
-
-            X[6:10,k] = qc
-            qr = qc
-        
-    return T,X
 
 def quad_frame(x:np.ndarray,ax:plt.Axes,scale:float=1.0):
     """

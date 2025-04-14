@@ -3,7 +3,7 @@ import os
 import torch
 
 import figs.utilities.config_helper as ch
-import figs.utilities.trajectory_helper as th
+import figs.utilities.transform_helper as th
 import figs.tsplines.min_snap as ms
 
 import sousvide.synthesize.synthesize_helper as sh

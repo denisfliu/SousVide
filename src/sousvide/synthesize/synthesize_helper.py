@@ -5,7 +5,7 @@ Helper functions for data synthesis.
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import copy
-import figs.utilities.trajectory_helper as th
+import figs.utilities.orientation_helper as oh
 import figs.dynamics.quadcopter_specifications as qs
 
 # Fixed parameters for camera projection
@@ -106,7 +106,7 @@ def generate_perturbations(Tsps:np.ndarray,
         
         # Ensure quaternion is well-behaved (magnitude and closest to previous)
         idxr = np.where(tXUd[0,:] <= t0)[0][-1]
-        x0[6:10] = th.obedient_quaternion(x0[6:10],tXUd[7:11,idxr])
+        x0[6:10] = oh.obedient_quaternion(x0[6:10],tXUd[7:11,idxr])
 
         # Store perturbation in list
         perturbation = {"t0":t0,"x0":x0}
