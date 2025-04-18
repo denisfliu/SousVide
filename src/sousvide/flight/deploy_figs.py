@@ -17,6 +17,7 @@ from sousvide.control.pilot import Pilot
 from figs.tsplines import min_snap as ms
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.control.vehicle_rate_uqp import VehicleRateUQP
 from figs.dynamics.external_forces import ExternalForces
 
 def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
@@ -99,6 +100,7 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
         # Load Pilot
         if pilot == "expert":
             controller = VehicleRateMPC(expert,expert_course)
+            # controller = VehicleRateUQP(expert,expert_course)
         else:
             controller = Pilot(cohort_name,pilot)
             controller.set_mode('deploy')
