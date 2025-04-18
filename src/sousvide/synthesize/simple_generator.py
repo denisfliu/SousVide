@@ -4,6 +4,7 @@ import torch
 
 import figs.utilities.config_helper as ch
 import figs.utilities.transform_helper as th
+import figs.dynamics.quadcopter_specifications as qs
 
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.synthesize.data_compress_helper as dch
@@ -11,10 +12,8 @@ import sousvide.visualize.rich_utilities as ru
 import sousvide.utilities.sousvide_utilities as svu
 
 from typing import Dict,Union,Tuple,List
-from figs.simulator import Simulator
 from figs.dynamics.external_forces import ExternalForces
-from figs.tsplines.min_snap import MinSnap
-from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.tsplines.min_time_snap import MinTimeSnap
 
 def generate_rollout_data(cohort_name:str,course_names:List[str],
                           gsplat_name:str,method_name:str,
@@ -59,26 +58,19 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
         # Initialize sample progress bar
         sample_task = progress.add_task(sample_desc1,total=None,units='samples')
 
-        # Initialize the simulator
-        simulator = Simulator(gsplat,method["rollout"])
-
         # Cycle through the courses
         for course_name in course_names:
             # Load and name the course_config
             course = ch.get_config(course_name,"courses")
             
             # Compute the desired variables
-            ms = MinSnap(course["waypoints"],expert["hz"])
+            ms = MinTimeSnap(course["waypoints"],10,expert["hz"])
             Tsd,FOd = ms.get_ideal(expert["hz"])
             Fex = ExternalForces(course["forces"])
             
             tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
             obj = svu.tXU_to_obj(tXUd)
 
-            # Update simulation variables
-            simulator.update_forces(course["forces"])
-            controller = VehicleRateMPC(expert,course)
-            
             # Get the batches of sample start times
             t0,tf = Tsd[0],Tsd[-1]
             dt_ro = method["duration"] or tf-t0
@@ -109,7 +101,8 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
 
                 # Generate rollout data
                 Trajectories,Images = generate_rollouts(
-                    simulator,controller,tXUd,obj,
+                    ms,gsplat,
+                    tXUd,obj,
                     Frames,Perturbations,
                     dt_ro,method["tol_select"],
                     idx_bt,sample_bar)
@@ -134,8 +127,7 @@ def generate_rollout_data(cohort_name:str,course_names:List[str],
             progress.refresh()
 
 def generate_rollouts(
-        simulator:Simulator,
-        controller:VehicleRateMPC,
+        mts:MinTimeSnap,gsplat:ch.GSplat,
         tXUd:np.ndarray,obj:np.ndarray,
         Frames:Dict[str,Union[np.ndarray,str,int,float]],
         Perturbations:Dict[str,Union[float,np.ndarray]],
@@ -171,6 +163,17 @@ def generate_rollouts(
         Images:         List of image rollouts.
     """
     
+    # =================================================================
+    mu = np.zeros((4,5))
+    std = np.array([
+        [ 0.40, 0.40, 0.40, 0.20, 0.20],
+        [ 0.40, 0.40, 0.40, 0.20, 0.20],
+        [ 0.40, 0.40, 0.40, 0.20, 0.20],
+        [ 0.20, 0.20, 0.20, 0.10, 0.10],
+    ])
+    Tskf,FOkf = mts.get_ideal(None)
+    hz = 20
+    # =================================================================
 
     # Get console
     console = ru.get_console()
@@ -188,19 +191,44 @@ def generate_rollouts(
         t0,x0 = perturbation["t0"],perturbation["x0"]
         tf = t0 + dt_ro
 
-        # Update the simulation variables
-        simulator.update_frame(frame)
-        controller.update_frame(frame)    
+        # Extract frame variables
+        spec = qs.generate_specifications(frame)
+        m,kt = spec["m"],spec["kt"]
+        Tc2b = spec["Tc2b"]
+        height,width = spec["camera"]["height"],spec["camera"]["width"]
+        channels = spec["camera"]["channels"]
+        camera = gsplat.generate_output_camera(spec["camera"])
 
-        # Simulate the flight
-        Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0)
+        # Generate perturbed state
+        k1 = np.random.choice([0, 1])
+        k2 = k1+1
+        W = np.random.normal(mu,std)
+
+        FO1 = FOkf[k1,:,:] + W
+        FO2 = FOkf[k2,:,:]
+        FO = np.stack((FO1[:,:],FO2[:,:]),axis=0)
+
+        # Solve the trajectory
+        dT,Pn = mts.solve(FO)
+        Ts = np.arange(0.0,np.sum(dT),1/hz)
+        tXU = th.dTPn_to_tXU(Ts,dT,Pn,m,kt)
+
+        Nro = tXU.shape[1]
+        Tro,Xro,Uro = tXU[0,:],tXU[1:11,:],tXU[11:15,:-1]
+        rUV = np.zeros((Nro,60,4))
+        Fro,Tsol = np.zeros((3,Nro)),np.zeros((Nro,))
+        tXUd = tXU
+
+        # Generate the images
+        Iro = np.zeros((Nro,height,width,channels),dtype=np.uint8)
+        for k in range(Nro):
+            Tb2w = th.x_to_T(Xro[:,k])
+            Tc2w = Tb2w@Tc2b
+            Iro[k,:,:,:] = gsplat.render_rgb(camera,Tc2w)
 
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < tol_select:
-            # Compute the rUV
-            rUV = sh.generate_edge_projections(Tro,Xro,tXUd,simulator.conFiG["frame"])
-        
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,"rUV":rUV,

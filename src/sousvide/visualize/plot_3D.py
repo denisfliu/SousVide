@@ -7,7 +7,7 @@ from typing import Dict,Union,List
 
 def tXU_to_3D(tXU_list:List[np.ndarray],
               WPs:np.ndarray=None,tXUd:np.ndarray=None,
-              scale:float=1.0,n:int=500,plot_last:bool=False):
+              scale:float=0.5,n:int=500,plot_last:bool=False):
     
     # Compute some useful variables
     traj_colors = ["red","green","blue","orange","purple","brown","pink","gray","olive","cyan"]
@@ -44,7 +44,7 @@ def tXU_to_3D(tXU_list:List[np.ndarray],
         for i in range(0,tXU.shape[1],n):
             pu.quad_frame(tXU[1:11,i],ax,scale=scale)
 
-        if plot_last == True or idx == 0:
+        if plot_last == True:
             pu.quad_frame(tXU[1:11,-1],ax,scale=scale)
 
     # Plot the control points if provided

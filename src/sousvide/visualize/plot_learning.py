@@ -54,7 +54,7 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,
         for loss_data in losses.values():
             # Extract the loss data
             loss_tn,loss_tt = loss_data["Loss_tn"],loss_data["Loss_tt"]
-            if any(loss_data["Eval_tte"]):
+            if np.any(loss_data["Eval_tte"]):
                 eval_tte = loss_data["Eval_tte"]
             else:
                 eval_tte = np.zeros((2,0))

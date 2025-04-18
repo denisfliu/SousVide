@@ -1,11 +1,9 @@
 import numpy as np
 import torch
 import os
-
 import figs.utilities.config_helper as ch
 import figs.utilities.transform_helper as th
 import figs.visualize.generate_videos as gv
-
 import sousvide.synthesize.synthesize_helper as sh
 import sousvide.utilities.sousvide_utilities as svu
 import sousvide.visualize.record_flight as rf
@@ -13,12 +11,11 @@ import sousvide.visualize.rich_utilities as ru
 import sousvide.flight.flight_helper as fh
 
 from typing import List,Literal,Union
-from sousvide.control.pilot import Pilot
-from figs.tsplines import min_snap as ms
+from figs.tsplines.min_snap import MinSnap
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
-from figs.control.vehicle_rate_uqp import VehicleRateUQP
 from figs.dynamics.external_forces import ExternalForces
+from sousvide.control.pilot import Pilot
 
 def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
                   roster:List[str],
@@ -62,7 +59,8 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
         expert_course = course
 
     # Compute the desired variables
-    Tsd,FOd = ms.solve(course["waypoints"])["FO"]
+    ms = MinSnap(course["waypoints"])
+    Tsd,FOd = ms.get_ideal(20)
     Fex = ExternalForces(course["forces"])
 
     tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
@@ -100,7 +98,6 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
         # Load Pilot
         if pilot == "expert":
             controller = VehicleRateMPC(expert,expert_course)
-            # controller = VehicleRateUQP(expert,expert_course)
         else:
             controller = Pilot(cohort_name,pilot)
             controller.set_mode('deploy')
