@@ -135,10 +135,10 @@ def compute_Tsp_batches(t0:float,tf:float,dt_ro:float,
     
     # Compute the trajectory duration
     dt_tt = tf - t0                                            # Total trajectory duration
-    
+
     # Compute sample start times and batchify
-    Ntp = int(rate*dt_tt)                                       # Number of time points per trajectory
-    Nsp = int(reps*Ntp)                                         # Number of sample points (total)
+    Ntp = int(round(rate*dt_tt))                                       # Number of time points per trajectory
+    Nsp = int(round(reps*Ntp))                                         # Number of sample points (total)
 
     # Compute the sample points array
     if dt_ro == dt_tt:

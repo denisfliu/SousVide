@@ -11,7 +11,7 @@ import sousvide.visualize.rich_utilities as ru
 import sousvide.flight.flight_helper as fh
 
 from typing import List,Literal,Union
-from figs.tsplines.min_snap import MinSnap
+from figs.tsplines.min_time_snap import MinTimeSnap
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
 from figs.dynamics.external_forces import ExternalForces
@@ -58,12 +58,17 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     else:
         expert_course = course
 
+    # Unpack some stuff
+    m_bs,kt_bs = bframe["mass"],bframe["motor_thrust_coeff"]
+    kT,use_l2_time = expert["plan"]["kT"],expert["plan"]["use_l2_time"]
+    hz = expert["track"]["hz"]
+    
     # Compute the desired variables
-    ms = MinSnap(course["waypoints"])
-    Tsd,FOd = ms.get_ideal(20)
-    Fex = ExternalForces(course["forces"])
+    mts = MinTimeSnap(course["waypoints"],hz,kT,use_l2_time)
+    fex = ExternalForces(course["forces"])
 
-    tXUd = th.TsFO_to_tXU(Tsd,FOd,bframe["mass"],bframe["motor_thrust_coeff"],Fex)
+    Tsd,FOd = mts.get_desired_trajectory()
+    tXUd = th.TsFO_to_tXU(Tsd,FOd,m_bs,kt_bs,fex)
     obj = svu.tXU_to_obj(tXUd)
 
     # Get the batch of sample start times
