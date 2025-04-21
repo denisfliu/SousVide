@@ -17,7 +17,7 @@ from figs.control.vehicle_rate_mpc import VehicleRateMPC
 
 def generate_rollout_data(cohort_name:str,course_names:list[str],
                           gsplat_name:str,method_name:str,
-                          expert_name:str="vrmpc_fr",bframe_name:str="carl",
+                          expert_name:str="Viper",bframe_name:str="carl",
                           Nro_ds:int=50,use_compress:bool=False) -> None:
     
     """

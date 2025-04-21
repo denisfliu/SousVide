@@ -19,7 +19,7 @@ from sousvide.control.pilot import Pilot
 
 def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
                   roster:List[str],
-                  expert_name:str="vrmpc_fr",expert_cname:str=None,
+                  expert_name:str="Viper",expert_cname:str=None,
                   bframe_name:str="carl",
                   mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
     """"
@@ -36,7 +36,7 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
         gsplat_name:    3D reconstruction of the scene contained as a Gaussian Splat.
         method_name:    Data generation method detailing the sampling and simulation configs.
         roster:         List of pilot names to simulate.
-        expert_name:    Name of the expert pilot to be used for the simulation.
+        expert_name:    Name of the expert pilot to be used for the simulation (default is Viper).
         expert_cname:   Name of the course to be used for the expert pilot (default is None).
         bframe_name:    Base frame for flying the trajectories (default is carl).
         mode:           Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
