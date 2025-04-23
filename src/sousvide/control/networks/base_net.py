@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 
 from abc import ABC, abstractmethod
-from typing import List,Dict,Union
 
 class BaseNet(nn.Module, ABC):
     """
@@ -31,13 +30,13 @@ class BaseNet(nn.Module, ABC):
 
         # Define required attributes that all subclasses must implement
         self.network_type:str = "basenet"
-        self.input_indices:Dict[str,List[torch.Tensor]] = {}
-        self.fpass_indices:Dict[str,List[torch.Tensor]] = {}
-        self.label_indices:Dict[str,List[torch.Tensor]] = {}
+        self.input_indices:dict[str,list[torch.Tensor]] = {}
+        self.fpass_indices:dict[str,list[torch.Tensor]] = {}
+        self.label_indices:dict[str,list[torch.Tensor]] = {}
         self.networks:nn.ModuleDict =  nn.ModuleDict()
         
         self.use_fpass:bool = True
-        self.Nznn:Union[int,Dict[str,List[int]]] = None
+        self.Nznn:int|dict[str,list[int]] = None
         self.nhy:int = 1
 
     @abstractmethod

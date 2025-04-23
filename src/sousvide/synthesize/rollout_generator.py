@@ -201,14 +201,10 @@ def generate_rollouts(
 
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
-
         if err < tol_select:
-            # Compute the rUV
-            rUV = sh.generate_edge_projections(Tro,Xro,tXUd,simulator.conFiG["frame"])
-        
             # Package the rollout data
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,"rUV":rUV,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
                 "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}

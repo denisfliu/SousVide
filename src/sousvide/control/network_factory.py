@@ -5,17 +5,10 @@ import sousvide.control.network_helper as nh
 
 from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
-from sousvide.control.networks.mlp import MLP
 from sousvide.control.networks.sifu import SIFU
-from sousvide.control.networks.sifs import SIFS
 from sousvide.control.networks.sift import SIFT
-from sousvide.control.networks.siftv2 import SIFTv2
-from sousvide.control.networks.sqfe import SqFE
-from sousvide.control.networks.tracenet import TraceNet
-from sousvide.control.networks.hpcn import HPCN
-from sousvide.control.networks.svcn import SVCN
 from sousvide.control.networks.svnet import SVNet
-from sousvide.control.networks.pathnet import PathNet
+from sousvide.control.networks.vitamin import Vitamin
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -46,31 +39,20 @@ def generate_network(
         network = torch.load(network_path)
     else:
         # Simple Networks
-        if network_type == "mlp":
-            network = MLP(**net_config)
+        if network_type == "simple":
+            network = BaseNet(**net_config)
         # Feature Extractors
-        elif network_type == "sqfe":
-            network = SqFE(**net_config)
-        elif network_type == "tracenet":
-            network = TraceNet(**net_config)
+        # ==========>
         # History Networks
         elif network_type == "sifu":
             network = SIFU(**net_config)
-        elif network_type == "sifs":
-            network = SIFS(**net_config)
         elif network_type == "sift":
             network = SIFT(**net_config)
-        elif network_type == "siftv2":
-            network = SIFTv2(**net_config)
         # Command Networks
-        elif network_type == "svcn":
-            network = SVCN(**net_config)
-        elif network_type == "hpcn":
-            network = HPCN(**net_config)
         elif network_type == "svnet":
             network = SVNet(**net_config)
-        elif network_type == "pathnet":
-            network = PathNet(**net_config)
+        elif network_type == "vitamin":
+            network = Vitamin(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

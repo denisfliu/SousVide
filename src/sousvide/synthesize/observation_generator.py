@@ -136,7 +136,7 @@ def generate_observations(pilot:Pilot,
     for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
-        Uro,Fro,rUVs = traj_data["Uro"],traj_data["Fro"],traj_data["rUV"]
+        Uro,Fro = traj_data["Uro"],traj_data["Fro"]
         obj,Ndata = traj_data["obj"],traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
         frame = traj_data["frame"]
@@ -169,7 +169,6 @@ def generate_observations(pilot:Pilot,
             tx_cr = np.hstack((Tro[k],Xro[:,k]))
             unn_cr,f_cr = Uro[:,k],Fro[:,k]
             img_cr = Imgs[k,:,:,:]
-            rUV_cr = rUVs[k,:,:]
 
             # Compute the source labels
             ynn_srcs = {
@@ -177,7 +176,6 @@ def generate_observations(pilot:Pilot,
                 "parameters": torch.tensor(params,dtype=torch.float32).unsqueeze(0),
                 "forces": torch.tensor(f_cr,dtype=torch.float32).unsqueeze(0),
                 "command": torch.tensor(unn_cr,dtype=torch.float32).unsqueeze(0),
-                "flight_path": torch.tensor(rUV_cr, dtype=torch.float32).unsqueeze(0)
             }
             
             # Rollout and collect the inputs

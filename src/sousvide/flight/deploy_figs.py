@@ -120,12 +120,9 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
             # Simulate Trajectory
             Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
 
-            # Compute the rUV
-            rUV = sh.generate_edge_projections(Tro,Xro,tXUd,simulator.conFiG["frame"])
-
             # Save Trajectory
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,"rUV":rUV,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
                 "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}

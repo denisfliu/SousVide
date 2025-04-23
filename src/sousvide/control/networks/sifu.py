@@ -2,14 +2,13 @@ import torch
 import sousvide.control.network_helper as nh
 
 from torch import nn
-from typing import List,Dict,Union
 from sousvide.control.networks.base_net import BaseNet
 
 class SIFU(BaseNet):
     def __init__(self,
-                 inputs:  Dict[str, List[List[Union[int, str]]]],
-                 outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
-                 layers:  Dict[str, Union[int,List[int]]],
+                 inputs:  dict[str, list[list[int|str]]],
+                 outputs: dict[str, dict[str, list[list[int|str]]]],
+                 layers:  dict[str, int|list[int]],
                  dropout=0.1,
                  network_type="sifu"):
         """

@@ -4,13 +4,13 @@ import sousvide.control.network_helper as nh
 from torch import nn
 from sousvide.control.networks.base_net import BaseNet
 
-class SIFT(BaseNet):
+class Vitamin(BaseNet):
     def __init__(self,
                  inputs:  dict[str, list[list[int|str]]],
                  outputs: dict[str, dict[str, list[list[int|str]]]],
                  layers:  dict[str, int|list[int]],
                  dropout=0.1,
-                 network_type="sift"):
+                 network_type="vitamin"):
         """
         Initialize a Sequence Into Features (Transformer) model.
         
@@ -34,16 +34,18 @@ class SIFT(BaseNet):
         """
 
         # Initialize the parent class
-        super(SIFT, self).__init__()
+        super(Vitamin, self).__init__()
 
         # Extract the inputs
         input_indices = nh.get_io_idxs(inputs)
-        fpass_indices = nh.get_io_idxs(outputs["fpass"])
-        label_indices = nh.get_io_idxs(outputs["label"])
+        fpass_indices = nh.get_io_idxs(outputs)
+        label_indices = nh.get_io_idxs(outputs)
 
         d_model,d_ff = layers["d_model"],layers["d_ff"]
         num_heads,num_layers = layers["num_heads"],layers["num_layers"]
         output_size = nh.get_io_size(label_indices)
+        NhL = layers["histLat_size"]
+        hidden_sizes = layers["hidden_sizes"]
 
         # Populate the layers
         encoder_layer = nn.TransformerEncoderLayer(
@@ -53,11 +55,21 @@ class SIFT(BaseNet):
             dropout=dropout,
             batch_first=True,
             activation='gelu')
-        
+
+        fc_out = []
+        prev_size = NhL+d_model
+        for layer_size in hidden_sizes:
+            fc_out.append(nn.Linear(prev_size, layer_size))
+            fc_out.append(nn.ReLU())
+            fc_out.append(nn.Dropout(dropout))
+
+            prev_size = layer_size
+        fc_out.append(nn.Linear(prev_size, output_size))
+
         networks = nn.ModuleDict({
             "fc_in": nn.Linear(len(inputs["history"][-1]), d_model),
             "encoder": nn.TransformerEncoder(encoder_layer, num_layers=num_layers),
-            "fc_out": nn.Linear(d_model, output_size)
+            "fc_out": nn.Sequential(*fc_out)
         })
 
         # Define the model
@@ -66,21 +78,29 @@ class SIFT(BaseNet):
         self.fpass_indices = fpass_indices
         self.label_indices = label_indices
         self.networks = networks
-        self.position = nh.generate_positional_encoding(d_model, len(inputs["history"][0]))
+        self.position = nh.generate_positional_encoding(d_model, len(inputs["history"][0])+1)
         
         self.use_fpass = True
         self.nhy = max(input_indices["history"][0])+1
 
-    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
+    def forward(self,
+                xnn_hy:torch.Tensor,
+                xnn_cr:torch.Tensor,
+                xnn_hL:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn:   History input.
+            xnn_hy:       History input.
+            xnn_cr:       Current input.
+            xnn_hL:       History feature input.
 
         Returns:
             ynn:        Output tensor.
         """
+
+        # Stack the inputs
+        xnn = torch.cat((xnn_hy, xnn_cr.unsqueeze(1)), dim=1)
 
         # Forward pass through embedding layer
         znn = self.networks["fc_in"](xnn) + self.position[:, :xnn.size(1), :].to(xnn.device)
@@ -88,9 +108,8 @@ class SIFT(BaseNet):
         # Pass through the transformer
         znn = self.networks["encoder"](znn)
 
-        if self.use_fpass == True:
-            ynn = znn[:,-1,:]
-        else:
-            ynn = self.networks["fc_out"](znn[:,-1,:])
+        # Command mlp
+        znn = torch.cat((znn[:,-1,:], xnn_hL), dim=1)
+        ynn = self.networks["fc_out"](znn)
         
         return ynn

@@ -1,11 +1,11 @@
 {
     "duration": 3.0,
     "reps": 10,
-    "rate": 10,
+    "rate": 5,
     "tol_select": 5e-2,
     "randomization": {
         "parameters": [
-            0.50, 2.10
+            0.00, 0.00
         ],
         "initial": [
             0.40, 0.40, 0.40,

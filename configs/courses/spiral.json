@@ -1,0 +1,80 @@
+{
+    "waypoints": {
+        "Nco": 6,
+        "keyframes": {
+            "fo0": {
+                "t": 0.000,
+                "fo":   [
+                    [-0.60,  0.00,  0.00],
+                    [-1.80,  0.00,  0.00],
+                    [-0.40,  0.00,  0.00],
+                    [ 1.57,  0.00,  0.00]
+                ]
+            },
+            "fo1": {
+                "t": 3.001,
+                "fo":   [
+                    [ 1.10,  null,  null,  null],
+                    [ 0.00,  null,  null,  null],
+                    [-0.60,  null,  null,  null],
+                    [ 3.14,  null,  null,  null]
+                ]
+            },
+            "fo2": {
+                "t": 5.082,
+                "fo":   [
+                    [-0.60,  null,  null,  null],
+                    [ 1.60,  null,  null,  null],
+                    [-0.80,  null,  null,  null],
+                    [ 4.72,  null,  null,  null]
+                ]
+            },
+            "fo3": {
+                "t": 6.761,
+                "fo":   [
+                    [-2.10,  null,  null,  null],
+                    [ 0.00,  null,  null,  null],
+                    [-1.00,  null,  null,  null],
+                    [ 6.28,  null,  null,  null]
+                ]
+            },
+            "fo4": {
+                "t": 8.521,
+                "fo":   [
+                    [-0.60,  null,  null,  null],
+                    [-1.40,  null,  null,  null],
+                    [-1.20,  null,  null,  null],
+                    [ 7.85,  null,  null,  null]
+                ]
+            },
+            "fo5": {
+                "t": 10.117,
+                "fo":   [
+                    [ 0.75,  null,  null,  null],
+                    [ 0.00,  null,  null,  null],
+                    [-1.40,  null,  null,  null],
+                    [ 9.42,  null,  null,  null]
+                ]
+            },
+            "fo6": {
+                "t": 12.111,
+                "fo":   [
+                    [-0.60,  null,  null,  null],
+                    [ 1.40,  null,  null,  null],
+                    [-1.60,  null,  null,  null],
+                    [10.99,  null,  null,  null]
+                ]
+            },
+            "fo7": {
+                "t": 14.951,
+                "fo":   [
+                    [-1.90,  0.00,  0.00],
+                    [ 0.00,  0.00,  0.00],
+                    [-1.80,  0.00,  0.00],
+                    [12.56,  0.00,  0.00]
+                ]
+            }
+        }
+    },
+    "forces": null
+}

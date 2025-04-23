@@ -2,7 +2,6 @@ import torch
 import sousvide.control.network_helper as nh
 
 from torch import nn
-from typing import List,Dict,Union
 from torchvision.models import (
     squeezenet1_1
 )
@@ -10,9 +9,9 @@ from sousvide.control.networks.base_net import BaseNet
 
 class SVNet(BaseNet):
     def __init__(self,
-                 inputs:  Dict[str, List[List[Union[int, str]]]],
-                 outputs: Dict[str, List[List[Union[int, str]]]],
-                 layers:  Dict[str, Union[int,List[int]]],
+                 inputs:  dict[str, list[list[int|str]]],
+                 outputs: dict[str, dict[str, list[list[int|str]]]],
+                 layers:  dict[str, int|list[int]],
                  dropout=0.1,Nsqnet=1000,
                  network_type="svnet"):
         """

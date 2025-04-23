@@ -1,31 +1,67 @@
 {
     "hz": 20,
     "networks": {
-        "featNet": {
-            "network_type": "tracenet",
+        "histNet": {
+            "network_type": "sift",
             "inputs": {
-                "rgb_image": [
-                    ["all"], ["all"], ["r", "g", "b"]
-                ],
-                "current": [
+                "history": [
+                    [0, 1, 2, 3, 4],
                     [
+                        "dt",
                         "pz",
                         "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
                     ]
                 ]
             },
             "outputs": {
-                "flight_path": [
-                    [0, 10, 20, 30, 40],
+                "fpass": {
+                    "histLat": [ ["all"] ]
+                },
+                "label": {
+                    "parameters": [ ["m", "kt"] ]
+                }
+            },
+            "layers": {
+                "d_model": 16,
+                "d_ff": 32,
+                "num_heads": 4,
+                "num_layers": 3
+            }
+        },
+        "commNet": {
+            "network_type": "vitamin",
+            "inputs": {
+                "history": [
+                    [0, 1, 2, 3, 4, 5, 6, 7, 8],
                     [
-                        "Lu", "Lv", "Ru", "Rv"
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
                     ]
+                ],
+                "current": [
+                    [
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "histLat": [ ["all"] ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
                 ]
             },
             "layers": {
-                "hidden_sizes": [512, 256, 512, 128, 32],
-                "augment_layer": 1
+                "d_model": 64,
+                "d_ff": 128,
+                "num_heads": 4,
+                "num_layers": 3,
+                "histLat_size":  16,
+                "hidden_sizes": [70, 32, 16, 8]
             }
         }
     },

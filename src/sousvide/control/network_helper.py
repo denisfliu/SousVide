@@ -189,3 +189,25 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
         xnn = torch.flatten(xnn, start_dim=1)
 
     return xnn
+
+def generate_positional_encoding( d_model, max_seq_len):
+    """
+    Generate positional encoding.
+
+    Args:
+        d_model:        Dimension of the model.
+        max_seq_len:    Maximum sequence length.
+
+    Returns:
+        pe:             Positional encoding.
+
+    """
+
+    # Generate the positional encoding
+    pe = torch.zeros(max_seq_len, d_model)
+    position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
+    div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-torch.log(torch.tensor(10000.0)) / d_model))
+    pe[:, 0::2] = torch.sin(position * div_term)
+    pe[:, 1::2] = torch.cos(position * div_term)
+
+    return pe.unsqueeze(0)  # Shape: (1, max_seq_len, d_model)
