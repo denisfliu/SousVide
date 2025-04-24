@@ -6,7 +6,7 @@ import json
 import numpy.typing as npt
 import albumentations as A
 
-from typing import Dict,Union,Tuple,Literal,List
+from typing import Literal
 from figs.control.base_controller import BaseController
 from albumentations.pytorch import ToTensorV2
 from sousvide.control.policy import Policy
@@ -89,7 +89,8 @@ class Pilot(BaseController):
         self.device = torch.device("cuda:0" if use_cuda else "cpu")
         self.policy = Policy(profile,pilot_name,pilot_path).to(self.device)
 
-        nhy,Nznn = self.policy.nhy,self.policy.Nznn           
+        nhy = self.policy.nhy
+        znn_cr,Znn = self.generate_feature_variables(nhy)
 
         # ---------------------------------------------------------------------
         # Pilot Observe Variables
@@ -98,8 +99,7 @@ class Pilot(BaseController):
         # Function Variables
         self.process_image = process_image                              # Image Processing Function
         self.txu_pr = torch.zeros(1,Ntx+Nu).to(self.device)             # Previous State
-        self.znn_cr = {key: torch.zeros(1, Nznn[key]).to(self.device)   # Current Feature Vector Input
-                   for key in Nznn.keys()}
+        self.znn_cr = znn_cr                                            # Current Feature Vector
 
         # Network Input Variables
         self.tx_cr = torch.zeros((1,Ntx)).to(self.device)               # Current State
@@ -114,9 +114,8 @@ class Pilot(BaseController):
         self.hy_idx = 0
 
         # Network Input Variables
-        self.Dnn = torch.zeros((1,nhy,18)).to(self.device)          # time step/State/Input History
-        self.Znn = {key: torch.zeros(1,nhy,Nznn[key]).to(self.device)   # Current Feature Vectors
-                   for key in Nznn.keys()}
+        self.Dnn = torch.zeros((1,nhy,18)).to(self.device)              # time step/State/Input History
+        self.Znn = Znn
         
         # ---------------------------------------------------------------------
         # Pilot Training Variables
@@ -136,7 +135,6 @@ class Pilot(BaseController):
         # Necessary Variables for Base Controller -----------------------------
         self.name = pilot_name
         self.hz = hz
-        self.Nznn = Nznn
         self.nhy = nhy
 
         # ---------------------------------------------------------------------
@@ -162,11 +160,24 @@ class Pilot(BaseController):
         else:
             raise ValueError("Invalid mode. Must be 'train' or 'deploy'.")
     
+    def generate_feature_variables(self,nhy:int) -> tuple[dict[str,torch.Tensor],dict[str,torch.Tensor]]:
+        """
+        Function that generates znn and Znn variables for the neural network model.
+        """
+        znn,Znn = {},{}
+        for key,network in self.policy.networks.items():
+            _,fp_size,_ = network.get_io_sizes()
+
+            znn[key] = torch.zeros((1,fp_size))
+            Znn[key] = torch.zeros((1,nhy,fp_size))
+
+        return znn,Znn
+    
     def observe(self,
-                upr:Union[np.ndarray,torch.Tensor],
-                tcr:Union[float,torch.Tensor],xcr:Union[np.ndarray,torch.Tensor],
-                obj:Union[np.ndarray,torch.Tensor],
-                icr:Union[npt.NDArray[np.uint8],None,torch.Tensor],zcr:Dict[str,torch.Tensor]) -> None:
+                upr:np.ndarray|torch.Tensor,
+                tcr:float|torch.Tensor,xcr:np.ndarray|torch.Tensor,
+                obj:np.ndarray|torch.Tensor,
+                icr:npt.NDArray[np.uint8]|None|torch.Tensor,zcr:dict[str,torch.Tensor]) -> None:
         """
         Function that performs the observation step of the OODA loop where we take in all the relevant
         flight data.
@@ -229,7 +240,8 @@ class Pilot(BaseController):
 
         self.Dnn[0,self.hy_idx,:] = torch.hstack((dt0,p0,v0,a0,q0,u0))
 
-        for network in self.znn_cr:                                     # Update Feature Vector History
+        # Update Feature Vector History
+        for network in self.znn_cr:
             self.Znn[network][0,self.hy_idx,:] = self.znn_cr[network]
 
         # Increment History Index
@@ -237,7 +249,7 @@ class Pilot(BaseController):
         if self.hy_idx >= self.Dnn.shape[1]:                           # If history blocks are full, reset index
             self.hy_idx = 0
         
-    def decide(self) -> Dict[str,torch.Tensor]:
+    def decide(self) -> dict[str,torch.Tensor]:
         """
         Build the inputs to the neural network model.
 
@@ -253,16 +265,17 @@ class Pilot(BaseController):
         xnn_hy = self.Dnn[:,idx_hy,:]
         xnn_ft = {key: self.Znn[key][:,idx_hy,:] for key in self.Znn.keys()} 
 
+
         # Generate the inputs to the neural network model
         inputs = [xnn_im,xnn_ob,xnn_cr,xnn_hy,xnn_ft]
         
         return inputs
     
     def act(self,
-            xnn: List[torch.Tensor]) -> Tuple[
+            xnn: list[torch.Tensor]) -> tuple[
                 np.ndarray,
                 torch.Tensor,
-                Dict[str,List[torch.Tensor]]]:
+                dict[str,list[torch.Tensor]]]:
 
         """
         Function that performs a forward pass of the neural network model and extracts
@@ -293,11 +306,11 @@ class Pilot(BaseController):
              tcr: float,
              xcr: np.ndarray,
              obj: np.ndarray,
-             icr: Union[npt.NDArray[np.uint8], None],
-             zcr: Dict[str,torch.Tensor]) -> Tuple[
+             icr: npt.NDArray[np.uint8]|None,
+             zcr: dict[str,torch.Tensor]) -> tuple[
                  np.ndarray,
-                 Dict[str,torch.Tensor],
-                 Dict[str,List[torch.Tensor]],
+                 dict[str,torch.Tensor],
+                 dict[str,list[torch.Tensor]],
                  np.ndarray]:
         """
         Function that runs the OODA loop. This is the main function that is called by the
@@ -340,9 +353,9 @@ class Pilot(BaseController):
                 tcr:float,xcr:np.ndarray,
                 upr:np.ndarray,
                 obj:np.ndarray,
-                icr:Union[npt.NDArray[np.uint8],None],zcr:Dict[str,torch.Tensor]) -> Tuple[
+                icr:npt.NDArray[np.uint8]|None,zcr:dict[str,torch.Tensor]) -> tuple[
                     np.ndarray,
-                    Dict[str,torch.Tensor],
+                    dict[str,torch.Tensor],
                     np.ndarray]:
         """
         Name mask for the OODA control loop. Variable position swap to match generic controllers.

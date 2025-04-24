@@ -3,12 +3,11 @@ import sousvide.control.network_factory as nf
 import sousvide.control.network_helper as nh
 
 from torch import nn
-from typing import Dict,Tuple,Any,Union,List
 from sousvide.control.networks.base_net import BaseNet
 
-class Policy(BaseNet):
+class Policy(nn.Module):
     def __init__(self,
-                 policy_config:Dict[str,Dict[str,Any]],
+                 policy_config:dict[str,dict],
                  policy_name:str,
                  policy_path:str):
         """
@@ -25,21 +24,16 @@ class Policy(BaseNet):
             networks:       Network layers.
             use_fpass:      Flag to use forward-pass.
             nhy:            Maximum sequence length.
-            Nznn:           Number of features.
         """
         
         # Initial Parent Call
-        super(Policy,self).__init__()
+        super().__init__()
 
         # Populate the network
-        networks:Dict[str,BaseNet] = nn.ModuleDict()
-        Nznn,nhy = {},0
+        networks:dict[str,BaseNet] = nn.ModuleDict()
+        nhy = 1
         for name,config in policy_config["networks"].items():
-            networks[name],nhy_net,Nznn_net = nf.generate_network(config,name,policy_path)   
-
-            # Store feature vector size
-            if Nznn_net is not None:
-                Nznn[name] = Nznn_net
+            networks[name],nhy_net = nf.generate_network(config,name,policy_path)   
 
             # Update the max sequence length variable
             if nhy_net is not None:
@@ -49,19 +43,19 @@ class Policy(BaseNet):
             for network in networks.values():
                 network.use_fpass = True
 
-        # Class Variables
-        self.network_type = policy_name
+        # Class Variables (last network outputs command)
         self.fpass_indices = network.fpass_indices
         self.label_indices = network.label_indices
-        self.networks:Dict[str,BaseNet] = networks
-
+        self.network_type = policy_name
         self.use_fpass = True
-        self.nhy,self.Nznn = int(nhy),Nznn
+        self.nhy = int(nhy)
+
+        self.networks = networks
 
     def forward(self,
                 xnn_im:torch.Tensor,xnn_ob:torch.Tensor,
-                xnn_cr:torch.Tensor,xnn_hy:torch.Tensor,xnn_ft:torch.Tensor) -> Tuple[
-                    torch.Tensor,torch.Tensor,Dict[str,List[torch.Tensor]]]:
+                xnn_cr:torch.Tensor,xnn_hy:torch.Tensor,xnn_ft:torch.Tensor) -> tuple[
+                    torch.Tensor,torch.Tensor,dict[str,list[torch.Tensor]]]:
         """
         Forward pass of the model.
 
@@ -101,8 +95,7 @@ class Policy(BaseNet):
             xnn_srcs[xnn_key] = ynn_net
 
             # Update the znn dictionary
-            if network.Nznn is not None:
-                znn[net_name] = ynn_net
+            znn[net_name] = ynn_net
 
             # Store input data for training
             xnn_dict[net_name] = xnn_net

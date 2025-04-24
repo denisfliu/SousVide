@@ -7,8 +7,13 @@ from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
 from sousvide.control.networks.sifu import SIFU
 from sousvide.control.networks.sift import SIFT
+from sousvide.control.networks.hpnet import HPNet
 from sousvide.control.networks.svnet import SVNet
-from sousvide.control.networks.vitamin import Vitamin
+from sousvide.control.networks.afnet import AFNet
+from sousvide.control.networks.jrnetv1 import JRNetv1
+from sousvide.control.networks.jrnetv2 import JRNetv2
+from sousvide.control.networks.jrnetv3 import JRNetv3
+from sousvide.control.networks.jrnetv4 import JRNetv4
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -49,16 +54,26 @@ def generate_network(
         elif network_type == "sift":
             network = SIFT(**net_config)
         # Command Networks
+        elif network_type == "hpnet":
+            network = HPNet(**net_config)
         elif network_type == "svnet":
             network = SVNet(**net_config)
-        elif network_type == "vitamin":
-            network = Vitamin(**net_config)
+        elif network_type == "afnet":
+            network = AFNet(**net_config)
+        elif network_type == "jrnetv1":
+            network = JRNetv1(**net_config)
+        elif network_type == "jrnetv2":
+            network = JRNetv2(**net_config)
+        elif network_type == "jrnetv3":
+            network = JRNetv3(**net_config)
+        elif network_type == "jrnetv4":
+            network = JRNetv4(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")
     
     # Check if network has feature,sequence requirments
-    nhy,Nz = network.nhy,network.Nznn
+    nhy = network.nhy
     
-    return network,nhy,Nz
+    return network,nhy
     

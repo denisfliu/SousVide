@@ -17,24 +17,26 @@
             },
             "outputs": {
                 "fpass": {
-                    "histLat": [ ["all"] ]
+                    "histLat": [ 8 ]
                 },
                 "label": {
                     "parameters": [ ["m", "kt"] ]
                 }
             },
             "layers": {
+                "dropout": 0.1,
                 "d_model": 32,
                 "d_ff": 64,
                 "num_heads": 4,
-                "num_layers": 2
+                "num_layers": 2,
+                "hidden_sizes": [16]
             }
         },
         "commNet": {
             "network_type": "svnet",
             "inputs": {
                 "rgb_image": [
-                    ["all"], ["all"], ["r", "g", "b"]
+                    224, 224, ["r", "g", "b"]
                 ],
                 "current1": [
                     [
@@ -49,7 +51,7 @@
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ ["all"] ]
+                "histLat": [ 8 ]
             },
             "outputs": {
                 "command": [
@@ -57,9 +59,10 @@
                 ]
             },
             "layers": {
+                "dropout": 0.1,
+                "sqnet_size": 1000,
                 "hidden_sizes": [512, 256, 128, 100, 100],
-                "cmd_aug_layer": 2,
-                "histLat_size":  32
+                "cmd_aug_layer": 2
             }
         }
     },

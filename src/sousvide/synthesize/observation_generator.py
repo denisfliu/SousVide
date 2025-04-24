@@ -154,7 +154,7 @@ def generate_observations(pilot:Pilot,
 
         Xnn,Ynn = [],[]
         unn_pr = np.zeros(4)
-        znn_cr = {key: torch.zeros(pilot.policy.Nznn[key]) for key in pilot.policy.Nznn.keys()}
+        znn_cr =  pilot.generate_feature_variables(pilot.policy.nhy)[0]
         for k in range(Ndata):
             # Generate current state (with/without noise augmentation)
             if aug_type == "additive":
@@ -192,7 +192,7 @@ def generate_observations(pilot:Pilot,
                     ynn_cr[xnn_key] = None
 
             # Collect data conditioned on subsample step and history window
-            if k % nss == 0 and k >= pilot.policy.nhy:
+            if k % nss == 0:
                 Xnn.append(xnn_cr)
                 Ynn.append(ynn_cr)
 

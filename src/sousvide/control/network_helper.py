@@ -47,22 +47,46 @@ def get_io_refr(io_type:Literal["basic","sequence","image"]) -> Dict[str, List[L
 
     return io_refr
 
-def get_io_size(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]]) -> int:
+def get_io_dims(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]]) -> int:
     """
-    Get the size of the input/output.
+    Get the dimensions of the input/output.
 
     Args:
         idxs_dict:  Dictionary of indices of the input/output.
 
     Returns:
-        io_size:    Size of the input/output tensor.
+        io_dims:   Dimensions of the input/output tensors.
     """
 
-    io_size = 0
+    io_dims = []
     for idxs_list in io_idxs.values():
-        io_size += math.prod(len(sublist) for sublist in idxs_list)
+        io_dim = [len(sublist) for sublist in idxs_list]
+        io_dims.append(io_dim)
 
-    return io_size
+    return io_dims
+
+def get_io_size(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]],
+                expanded:bool=False) -> int:
+    """
+    Get the total size of the input/output.
+
+    Args:
+        idxs_dict:  Dictionary of indices of the input/output.
+
+    Returns:
+        io_size:   Sizes of the input/output tensors.
+    """
+
+    io_dims = get_io_dims(io_idxs)
+    io_size = []
+    for io_dim in io_dims:
+        io_size.append(math.prod(io_dim))
+
+    if expanded:
+        return io_size
+    else:
+        return sum(io_size)
+
 
 def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,List[Union[slice,torch.Tensor]]] :
     """
@@ -109,20 +133,15 @@ def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,Lis
         else:
             refr = io_refr[io][-1]
 
-        sequences,channels = config[:-1],config[-1]
-
         idxs = []
-        for sequence in sequences:
-            if sequence == ["all"]:
-                idxs.append(slice(None))
-            else:
-                idxs.append(torch.tensor(sequence))
-
-        if channels == ["all"]:
-            idxs.append(slice(None))
-        else:
-            channel_indices = [refr.index(channel) for channel in channels]
-            idxs.append(torch.tensor(channel_indices))
+        for dim in config:
+            if isinstance(dim,int):
+                idxs.append(torch.arange(dim))
+            elif isinstance(dim,list) and all(isinstance(i, int) for i in dim):
+                idxs.append(torch.tensor(dim))
+            elif isinstance(dim,list) and all(isinstance(i, str) for i in dim):
+                channel_indices = [refr.index(channel) for channel in dim]
+                idxs.append(torch.tensor(channel_indices))
 
         # Catch the case where the io is an rgb_image since convention
         # is actually (C,H,W) and not (H,W,C)
@@ -190,7 +209,7 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
 
     return xnn
 
-def generate_positional_encoding( d_model, max_seq_len):
+def generate_positional_encoding( d_model, max_seq_len=100):
     """
     Generate positional encoding.
 

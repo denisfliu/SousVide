@@ -17,22 +17,22 @@
             },
             "outputs": {
                 "fpass": {
-                    "histLat": [ ["all"] ]
+                    "histLat": [ 8 ]
                 },
                 "label": {
                     "parameters": [ ["m", "kt"] ]
                 }
             },
             "layers": {
-                "hidden_sizes": [64, 32],
-                "histLat_size": 8
+                "dropout": 0.1,
+                "hidden_sizes": [64, 32]
             }
         },
         "commNet": {
             "network_type": "svnet",
             "inputs": {
                 "rgb_image": [
-                    ["all"], ["all"], ["r", "g", "b"]
+                    224, 224, ["r", "g", "b"]
                 ],
                 "current1": [
                     [
@@ -47,7 +47,7 @@
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ ["all"] ]
+                "histLat": [ 8 ]
             },
             "outputs": {
                 "command": [
@@ -55,9 +55,10 @@
                 ]
             },
             "layers": {
+                "dropout": 0.1,
+                "sqnet_size": 1000,
                 "hidden_sizes": [512, 256, 128, 100, 100],
-                "cmd_aug_layer": 2,
-                "histLat_size":  8
+                "cmd_aug_layer": 2
             }
         }
     },

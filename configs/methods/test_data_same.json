@@ -1,0 +1,26 @@
+{
+    "duration": 3.0,
+    "reps": 5,
+    "rate": 4,
+    "tol_select": 5e-2,
+    "randomization": {
+        "parameters": [
+            0.00, 0.00
+        ],
+        "initial": [
+            0.40, 0.40, 0.40,
+            0.40, 0.40, 0.40,
+            0.20, 0.20, 0.20, 0.20
+        ]
+    },
+    "rollout": {
+        "frequency": 100,
+        "delay": 0.0,
+        "external_forces": null,
+        "noise": {
+            "model": null,
+            "sensor": null
+        },
+        "fusion": null
+    }
+}

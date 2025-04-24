@@ -33,18 +33,18 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str,
     # Plot the losses for each student
     student_data = {}
     for student in roster:
-        try:
-            student_path = os.path.join(cohort_path, "roster", student)
-            losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
-
+        # Load the losses for each student
+        student_path = os.path.join(cohort_path, "roster", student)
+        losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
+        if os.path.exists(losses_path):
             losses: dict = torch.load(losses_path)
-        except:
-            student_summary = [
+        else:
+            student_summary = (
                 f"{'-' * Nln}\n"
                 f"Student [bold cyan]{student}[/] does not have a [bold cyan]{network_name}[/].\n"
-            ]
+            )
             learning_summary += student_summary
-            
+
             continue
 
         # Gather plot data

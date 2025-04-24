@@ -12,7 +12,6 @@ class SVNet(BaseNet):
                  inputs:  dict[str, list[list[int|str]]],
                  outputs: dict[str, dict[str, list[list[int|str]]]],
                  layers:  dict[str, int|list[int]],
-                 dropout=0.1,Nsqnet=1000,
                  network_type="svnet"):
         """
         Initialize a SousVide Command Network.
@@ -33,24 +32,21 @@ class SVNet(BaseNet):
         """
 
         # Initialize the parent class
-        super(SVNet, self).__init__()
+        super(SVNet, self).__init__(inputs,outputs,network_type)
 
-        # Extract the configs
-        input_indices = nh.get_io_idxs(inputs)
-        fpass_indices = nh.get_io_idxs(outputs)
-        label_indices = nh.get_io_idxs(outputs)
-
-        # Some useful intermediate variables
+        # Unpack network configs from config
+        dropout = layers["dropout"]
+        Nsq = layers["sqnet_size"]
         hidden_sizes = layers["hidden_sizes"]
         idx_cmd = layers["cmd_aug_layer"]
-        NhL = layers["histLat_size"]
-        Ncr1 = len(input_indices["current1"][-1])
-        Ncr2 = len(input_indices["current2"][-1])
 
-        output_size = nh.get_io_size(label_indices)
+        # Unpack network configs from parent
+        input_sizes,_,output_sizes = self.get_io_sizes(expanded=True)
+        Ncr1,Ncr2,NhL = input_sizes[1],input_sizes[2],input_sizes[3]
+        output_size = output_sizes[0]
 
-        # Configure hidden layer sizes
-        prev_size = Nsqnet + Ncr1
+        # Populate the network
+        prev_size = Ncr1+Nsq
 
         mlp0 = []
         for layer_size in hidden_sizes[:idx_cmd]:
@@ -79,11 +75,7 @@ class SVNet(BaseNet):
             "mlp1": nn.Sequential(*mlp1)
         })
 
-        # Define the model
-        self.network_type = network_type
-        self.input_indices = input_indices
-        self.fpass_indices = fpass_indices
-        self.label_indices = label_indices
+        # Class Variables
         self.networks = networks
     
     def forward(self,
