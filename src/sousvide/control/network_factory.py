@@ -14,6 +14,7 @@ from sousvide.control.networks.jrnetv1 import JRNetv1
 from sousvide.control.networks.jrnetv2 import JRNetv2
 from sousvide.control.networks.jrnetv3 import JRNetv3
 from sousvide.control.networks.jrnetv4 import JRNetv4
+from sousvide.control.networks.qznet import QZNet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -32,7 +33,6 @@ def generate_network(
     Returns:
         network:    The generated network.
         nhy:        The maximum sequence length (if any).
-        Nz:         The number of features (if any).
     """
 
     # Some useful intermediate variables
@@ -68,6 +68,8 @@ def generate_network(
             network = JRNetv3(**net_config)
         elif network_type == "jrnetv4":
             network = JRNetv4(**net_config)
+        elif network_type == "qznet":
+            network = QZNet(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

@@ -47,7 +47,6 @@ class Policy(nn.Module):
         self.fpass_indices = network.fpass_indices
         self.label_indices = network.label_indices
         self.network_type = policy_name
-        self.use_fpass = True
         self.nhy = int(nhy)
 
         self.networks = networks
@@ -55,7 +54,7 @@ class Policy(nn.Module):
     def forward(self,
                 xnn_im:torch.Tensor,xnn_ob:torch.Tensor,
                 xnn_cr:torch.Tensor,xnn_hy:torch.Tensor,xnn_ft:torch.Tensor) -> tuple[
-                    torch.Tensor,torch.Tensor,dict[str,list[torch.Tensor]]]:
+                    torch.Tensor,dict[str,torch.Tensor],dict[str,torch.Tensor]]:
         """
         Forward pass of the model.
 
@@ -78,11 +77,8 @@ class Policy(nn.Module):
             "current": xnn_cr, "history": xnn_hy, "features": xnn_ft
         }
 
-        # Initialize the function outputs
-        ynn,znn = torch.zeros(4),{}
-        xnn_dict = {}
-
         # Forward Pass through the networks
+        znn,xnn_dict = {},{}
         for net_name,network in self.networks.items():
             # Extract the Network Inputs and Input Key
             xnn_net = nh.extract_io(xnn_srcs,network.input_indices)
@@ -103,7 +99,4 @@ class Policy(nn.Module):
         # Last network output is the policy output
         ynn = ynn_net
 
-        if self.use_fpass:
-            return ynn,znn,xnn_dict
-        else:
-            return ynn
+        return ynn,znn,xnn_dict

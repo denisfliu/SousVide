@@ -33,10 +33,10 @@ class Pilot(BaseController):
             policy:         Nerual network policy.
 
             process_image:  Image processing function.
-            txu_pr:         Previous time/state.
-            znn_cr:         Current feature vector.
+            txupr:          Previous time/state.
+            zcr:            Current feature vector.
 
-            tx_cr:          Current state.
+            txcr:           Current state.
             Obj:            Objective.
             Img:            Image.
 
@@ -90,21 +90,21 @@ class Pilot(BaseController):
         self.policy = Policy(profile,pilot_name,pilot_path).to(self.device)
 
         nhy = self.policy.nhy
-        znn_cr,Znn = self.generate_feature_variables(nhy)
+        zcr,Znn = self.generate_feature_variables(nhy)
 
         # ---------------------------------------------------------------------
         # Pilot Observe Variables
         # ---------------------------------------------------------------------
         
         # Function Variables
-        self.process_image = process_image                              # Image Processing Function
-        self.txu_pr = torch.zeros(1,Ntx+Nu).to(self.device)             # Previous State
-        self.znn_cr = znn_cr                                            # Current Feature Vector
+        self.process_image = process_image                      # Image Processing Function
+        self.txupr = torch.zeros(1,Ntx+Nu).to(self.device)      # Previous State
+        self.zcr = zcr                                          # Current Feature Vector
 
         # Network Input Variables
-        self.tx_cr = torch.zeros((1,Ntx)).to(self.device)               # Current State
-        self.Obj = torch.zeros(obj_dim).to(self.device)                 # Objective
-        self.Img = torch.zeros(img_dim).to(self.device)                 # Image
+        self.txcr = torch.zeros((1,Ntx)).to(self.device)       # Current State
+        self.Obj = torch.zeros(obj_dim).to(self.device)         # Objective
+        self.Img = torch.zeros(img_dim).to(self.device)         # Image
 
         # ---------------------------------------------------------------------
         # Pilot Orient Variables
@@ -210,11 +210,11 @@ class Pilot(BaseController):
             icr = torch.from_numpy(icr).float()
 
         # Update Function Variables
-        self.txu_pr.copy_(torch.cat((self.tx_cr,upr),dim=1))
-        self.tx_cr.copy_(torch.cat((tcr,xcr),dim=1))
+        self.txupr.copy_(torch.cat((self.txcr,upr),dim=1))
+        self.txcr.copy_(torch.cat((tcr,xcr),dim=1))
 
         for key,value in zcr.items():
-            self.znn_cr[key].copy_(value)
+            self.zcr[key].copy_(value)
 
         # Update Network Input Variables
         self.Obj.copy_(obj)
@@ -233,16 +233,16 @@ class Pilot(BaseController):
         """
 
         # Update history data
-        dt0 = self.tx_cr[0,0]-self.txu_pr[0,0]
-        p0,q0 = self.txu_pr[0,1:4],self.txu_pr[0,7:11]
-        v0,v1 = self.txu_pr[0,4:7],self.tx_cr[0,4:7]
-        a0,u0 = (v1-v0)/(dt0+1e-9),self.txu_pr[0,11:15]
+        dt0 = self.txcr[0,0]-self.txupr[0,0]
+        p0,q0 = self.txupr[0,1:4],self.txupr[0,7:11]
+        v0,v1 = self.txupr[0,4:7],self.txcr[0,4:7]
+        a0,u0 = (v1-v0)/(dt0+1e-9),self.txupr[0,11:15]
 
         self.Dnn[0,self.hy_idx,:] = torch.hstack((dt0,p0,v0,a0,q0,u0))
 
         # Update Feature Vector History
-        for network in self.znn_cr:
-            self.Znn[network][0,self.hy_idx,:] = self.znn_cr[network]
+        for network in self.zcr:
+            self.Znn[network][0,self.hy_idx,:] = self.zcr[network]
 
         # Increment History Index
         self.hy_idx += 1                                                # Increment History index
@@ -261,7 +261,7 @@ class Pilot(BaseController):
         idx_hy = (torch.arange(Nhy,0,-1)+khy)%Nhy
         
         xnn_im,xnn_ob = self.Img, self.Obj
-        xnn_cr = self.tx_cr
+        xnn_cr = self.txcr
         xnn_hy = self.Dnn[:,idx_hy,:]
         xnn_ft = {key: self.Znn[key][:,idx_hy,:] for key in self.Znn.keys()} 
 
