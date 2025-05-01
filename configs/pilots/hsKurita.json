@@ -2,14 +2,21 @@
     "hz": 20,
     "networks": {
         "commNet": {
-            "network_type": "afnet",
+            "network_type": "jrnetv2",
             "inputs": {
-                "history": [
-                    [0, 5, 10, 15, 20],
+                "history1": [
+                    [0, 1, 2, 3, 4, 5],
                     [
                         "px", "py", "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "history2": [
+                    [0, 1, 2, 3, 4, 5],
+                    [
+                        "dt",
+                        "nf", "wx", "wy", "wz"
                     ]
                 ],
                 "current": [
@@ -21,9 +28,17 @@
                 ]
             },
             "outputs": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
+                "fpass": {
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ]
+                },
+                "label": {
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ],
+                    "parameters": [ ["m", "kt"] ]
+                }
             },
             "layers": {
                 "dropout": 0.1,

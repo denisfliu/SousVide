@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 import contextlib
 import io
 import torch
@@ -8,7 +9,6 @@ import torch.optim as optim
 import sousvide.synthesize.observation_generator as og
 import sousvide.visualize.rich_utilities as ru
 
-from typing import List
 from torch.utils.data import DataLoader
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
@@ -17,11 +17,11 @@ from sousvide.control.networks.base_net import BaseNet
 from sousvide.instruct.synthesized_data import *
 import sousvide.flight.deploy_figs as df
 
-def train_roster(cohort_name:str,roster:List[str],
+def train_roster(cohort_name:str,roster:list[str],
                  network_name:str,Neps:int,
                  regen:bool=False,
-                 use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
-                 lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
+                 use_deploy:None|str=None,deploy_method:None|str=None,
+                 lim_sv:int=50,lr:float=1e-4,batch_size:int=64):
     
     # Initialize the console variable
     console = ru.get_console()
@@ -46,10 +46,12 @@ def train_roster(cohort_name:str,roster:List[str],
             train_student(cohort_name,student,network_name,Neps,
                           use_deploy,deploy_method,
                           student_bar,lim_sv,lr,batch_size)
+            progress.refresh()
+
 
 def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
-                  use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
-                  progress_bar:Tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  use_deploy:None|str=None,deploy_method:None|str=None,
+                  progress_bar:tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
                   ) -> None:
     
     # Pytorch Config
@@ -77,8 +79,14 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
     # Some Useful Paths
     student_path = student.path
     losses_path  = os.path.join(student_path,"losses_"+network_name+".pt")
-    network_path = os.path.join(student_path,network_name+".pt")
+    
+    if use_deploy is not None:
+        ckpts_path  = os.path.join(student_path,"ckpts")
 
+        # Check if the checkpoint path exists
+        if not os.path.exists(ckpts_path):
+            os.makedirs(ckpts_path)
+        
     # Load loss log if it exists
     if os.path.exists(losses_path):
         prev_losses_log = torch.load(losses_path)
@@ -151,6 +159,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
         if progress_bar is not None:
             progress,student_task = progress_bar
             progress.update(student_task,loss=epLoss_tn,advance=1)
+            progress.refresh()
 
         # Save at intermediate steps and at the end
         if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
@@ -158,17 +167,24 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             end_time = time.time()
             t_train = end_time - start_time
 
-            torch.save(network,network_path)
-
+            # Save the latest network
+            netw_path = os.path.join(student_path,network_name+".pt")
+            torch.save(network,netw_path)            
+            
             # Evaluation (optional)
             if use_deploy is not None:
-                # Use test set course
+                # Save as a checkpoint
+                ckpt_name = network_name+"_ckpt"+str(ep+1).zfill(3)
+                ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
+                torch.save(network,ckpt_path)
+
+                # Evaluate using a deployment
                 eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
                 with contextlib.redirect_stdout(io.StringIO()):
                     metric = df.deploy_roster(
                         cohort_name,eval_course,use_deploy,deploy_method,
                         [student_name],mode="evaluate")
-                    
+
                 # Extract the metrics
                 Eval_tte.append(
                     (ep+1,metric[student_name]["TTE"]["mean"])
@@ -192,10 +208,27 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             
             torch.save(curr_losses_log,losses_path)
 
+    # Pick the checkpoint with the best evaluation metric
+    if use_deploy is not None:
+        # Get the best checkpoint
+        best_ckpt = min(Eval_tte,key=lambda x: x[1])[0]
+        best_ckpt = network_name+"_ckpt"+str(best_ckpt).zfill(3)
+        ckpt_path = os.path.join(ckpts_path,best_ckpt+".pt")
+
+        # Load the best checkpoint
+        best_network = torch.load(ckpt_path)
+
+        # Save the best network
+        network_path = os.path.join(student_path,network_name+".pt")
+        torch.save(best_network,network_path)
+
+        # Delete the checkpoints
+        shutil.rmtree(ckpts_path)
+
     # Cap off progress update
     progress.refresh()
 
-def get_network(policy:Policy,net_name:Union[str,List[str]]) -> BaseNet:
+def get_network(policy:Policy,net_name:str|list[str]) -> BaseNet:
     """
     Get the networks based on the list of network names.
 

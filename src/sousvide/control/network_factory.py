@@ -7,6 +7,8 @@ from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
 from sousvide.control.networks.sifu import SIFU
 from sousvide.control.networks.sift import SIFT
+from sousvide.control.networks.ranetv1 import RANetv1
+from sousvide.control.networks.ranetv2 import RANetv2
 from sousvide.control.networks.hpnet import HPNet
 from sousvide.control.networks.svnet import SVNet
 from sousvide.control.networks.afnet import AFNet
@@ -14,7 +16,6 @@ from sousvide.control.networks.jrnetv1 import JRNetv1
 from sousvide.control.networks.jrnetv2 import JRNetv2
 from sousvide.control.networks.jrnetv3 import JRNetv3
 from sousvide.control.networks.jrnetv4 import JRNetv4
-from sousvide.control.networks.qznet import QZNet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -53,6 +54,10 @@ def generate_network(
             network = SIFU(**net_config)
         elif network_type == "sift":
             network = SIFT(**net_config)
+        elif network_type == "ranetv1":
+            network = RANetv1(**net_config)
+        elif network_type == "ranetv2":
+            network = RANetv2(**net_config)
         # Command Networks
         elif network_type == "hpnet":
             network = HPNet(**net_config)
@@ -68,8 +73,6 @@ def generate_network(
             network = JRNetv3(**net_config)
         elif network_type == "jrnetv4":
             network = JRNetv4(**net_config)
-        elif network_type == "qznet":
-            network = QZNet(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

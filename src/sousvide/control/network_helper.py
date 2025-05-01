@@ -170,7 +170,6 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
         xnn:        List/tensor of extracted inputs.
     """
 
-    # Get the input/output tensors from the input/out dictionary
     if io_idxs is None:
         # Return all if no indices are provided
         xnn = list(io_srcs.values())
@@ -184,13 +183,11 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
             # Extract the input/output tensor
             data = io_srcs[name]
             for dim, idx in enumerate(idxs):
-                if isinstance(idx, slice):
-                    idxs = torch.arange(*idx.indices(data.shape[dim+1]))
-                elif isinstance(idx,torch.Tensor):
+                if isinstance(idx,torch.Tensor):
                     idxs = idx
                 else:
                     raise ValueError(f"Invalid type in index_list[{dim}]: {type(idx)}. Must be slice or list.")
-                
+
                 # Move indices to the same device as the input/output tensor
                 idxs = idxs.to(data.device)
         
@@ -201,7 +198,7 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
 
     # Convert to tensor if requested
     if use_tensor:
-        xnn = torch.cat(xnn)
+        xnn = torch.cat(xnn, dim=1)
 
     # Flatten the non-batch dimensions if requested
     if flatten:

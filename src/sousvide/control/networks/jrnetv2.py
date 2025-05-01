@@ -29,12 +29,22 @@ class JRNetv2(BaseNet):
         input_dims,_,_ = self.get_io_dims()
         _,_,output_sizes = self.get_io_sizes(expanded=True)
         d_state,d_input = input_dims[0][1], input_dims[1][1]
-        output_size = output_sizes[0]
+        cmd_output_size = output_sizes[0]
+        prm_output_size = output_sizes[1]
 
         # Populate the network
         state_embed = nn.Linear(d_state, d_model)
         input_embed = nn.Linear(d_input, d_model)
         pos_encoding = nh.generate_positional_encoding(d_model)
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=d_ff,
+            dropout=dropout,
+            batch_first=True,
+            activation='gelu')
+        encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model,
@@ -45,9 +55,13 @@ class JRNetv2(BaseNet):
             activation='gelu')
         decoder = nn.TransformerDecoder(decoder_layer, num_layers=num_layers)
 
-        head = nn.Sequential(
+        cmd_head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model, output_size),
+            nn.Linear(d_model, cmd_output_size),
+        )
+        prm_head = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, prm_output_size),
         )
 
         # Class Variables
@@ -56,9 +70,9 @@ class JRNetv2(BaseNet):
             "state_embed": state_embed,
             "input_embed": input_embed,
             "decoder": decoder,
-            "head": head
+            "cmd_head": cmd_head,
+            "prm_head": prm_head
         })
-
 
     def forward(self,
                 xnn_hy1:torch.Tensor,
@@ -77,8 +91,8 @@ class JRNetv2(BaseNet):
         """
 
         # Package the inputs
-        xnn_st = torch.cat((xnn_cr.unsqueeze(1), xnn_hy1), dim=1)
-        xnn_in = xnn_hy2
+        xnn_st = torch.cat((xnn_hy1.flip(1),xnn_cr.unsqueeze(1)), dim=1)
+        xnn_in = xnn_hy2.flip(0)
         Nwd_st,Nwd_in = xnn_st.shape[1],xnn_in.shape[1]
         
         tgt = self.networks["state_embed"](xnn_st) + self.pos_encoding[:,:Nwd_st,:]
@@ -89,6 +103,9 @@ class JRNetv2(BaseNet):
 
         znn = self.networks["decoder"](tgt, mem, memory_mask=mem_mask)
 
-        ynn = self.networks["head"](znn[:,-1,:])
+        ynn = self.networks["cmd_head"](znn[:,-1,:])
+        if self.use_fpass == False:
+            ynn_prm = self.networks["prm_head"](znn[:,-1,:])
+            ynn = torch.cat((ynn, ynn_prm), dim=-1)
         
         return ynn

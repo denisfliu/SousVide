@@ -2,14 +2,21 @@
     "hz": 20,
     "networks": {
         "commNet": {
-            "network_type": "afnet",
+            "network_type": "jrnetv1",
             "inputs": {
-                "history": [
-                    [0, 1, 2, 3, 4, 5],
+                "history1": [
+                    [0, 5, 10, 15, 20, 25],
                     [
                         "px", "py", "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "history2": [
+                    [0, 5, 10, 15, 20, 25],
+                    [
+                        "dt",
+                        "nf", "wx", "wy", "wz"
                     ]
                 ],
                 "current": [

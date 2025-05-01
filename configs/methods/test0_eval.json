@@ -5,7 +5,7 @@
     "tol_select": null,
     "randomization": {
         "parameters": [
-            0.50, 2.10
+            0.00, 0.00
         ],
         "initial": [
             0.40, 0.40, 0.40,
@@ -19,18 +19,7 @@
         "external_forces": null,
         "noise": {
             "model": null,
-            "sensor": {
-                "mean": [
-                    0.00, 0.00, 0.00,
-                    0.00, 0.00, 0.00,
-                    0.00, 0.00, 0.00, 0.00
-                ],
-                "std": [
-                    4.2e-2, 3.6e-2, 6.4e-3,
-                    6.6e-2, 5.3e-2, 2.6e-2,
-                    2.1e-3, 2.6e-3, 3.4e-3, 2.3e-03
-                ]
-            }
+            "sensor": null
         },
         "fusion": null
     }

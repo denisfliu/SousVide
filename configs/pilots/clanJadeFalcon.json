@@ -1,19 +1,19 @@
 {
     "hz": 20,
     "networks": {
-        "commNet": {
-            "network_type": "jrnetv2",
+        "histNet": {
+            "network_type": "ranetv2",
             "inputs": {
                 "history1": [
-                    [0, 1, 2, 3, 4, 5],
+                    [ 0, 1, 2, 3, 4],
                     [
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
                 "history2": [
-                    [0, 1, 2, 3, 4, 5],
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
                         "nf", "wx", "wy", "wz"
@@ -21,23 +21,21 @@
                 ],
                 "current": [
                     [
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
                 ]
             },
             "outputs": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
+                "parameters": [ ["m", "kt"] ]
             },
             "layers": {
                 "dropout": 0.1,
                 "d_model": 64,
                 "d_ff": 128,
                 "num_heads": 4,
-                "num_layers": 3
+                "num_layers": 2
             }
         }
     },

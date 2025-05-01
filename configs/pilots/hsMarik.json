@@ -2,8 +2,23 @@
     "hz": 20,
     "networks": {
         "commNet": {
-            "network_type": "hpnet",
+            "network_type": "jrnetv1",
             "inputs": {
+                "history1": [
+                    [0, 1, 2, 3, 4, 5],
+                    [
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "history2": [
+                    [0, 1, 2, 3, 4, 5],
+                    [
+                        "dt",
+                        "nf", "wx", "wy", "wz"
+                    ]
+                ],
                 "current": [
                     [
                         "px", "py", "pz",
@@ -19,7 +34,10 @@
             },
             "layers": {
                 "dropout": 0.1,
-                "hidden_sizes": [100, 100]
+                "d_model": 32,
+                "d_ff": 64,
+                "num_heads": 4,
+                "num_layers": 2
             }
         }
     },

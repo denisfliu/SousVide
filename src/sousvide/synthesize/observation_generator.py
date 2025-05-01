@@ -101,6 +101,7 @@ def generate_observation_data(cohort:str,roster:List[str],
                     
                     # Update the observations progress bar
                     progress.update(obsv_task,description=obsv_desc2)
+                    progress.refresh()
 
                     # Save the observations
                     save_observations(cohort_path,course,pilot.name,observations,idx_ds,networks)
@@ -185,11 +186,8 @@ def generate_observations(pilot:Pilot,
             ynn_cr = {}
             for xnn_key in xnn_cr.keys():
                 ynn_idxs = pilot.policy.networks[xnn_key].label_indices
-                try:
-                    ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,
-                                                    use_tensor=True,flatten=True)
-                except:
-                    ynn_cr[xnn_key] = None
+                ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,
+                                                use_tensor=True,flatten=True)
 
             # Collect data conditioned on subsample step and history window
             if k % nss == 0:
@@ -203,6 +201,7 @@ def generate_observations(pilot:Pilot,
         if progress_bar is not None:
             progress,obsv_task = progress_bar
             progress.update(obsv_task,advance=1)
+            progress.refresh()
 
         # Store the observation data
         observations = {

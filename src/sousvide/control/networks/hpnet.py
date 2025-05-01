@@ -16,7 +16,9 @@ class HPNet(BaseNet):
         """
         Initialize a HotPot Network model.
 
-        The network takes in a current input into an MLP and outputs a motor command.
+        The network takes in a current input and a history inputs into an MLP
+        and outputs a motor command.
+
         """
 
         # Initialize the parent class
@@ -28,12 +30,11 @@ class HPNet(BaseNet):
 
         # Unpack network configs from parent
         input_sizes,_,output_sizes = self.get_io_sizes(expanded=True)
-        input_size = input_sizes[0]
+        input_size = sum(input_sizes)
         output_size = output_sizes[0]
 
         # Populate the network
         prev_size = input_size
-
         mlp = []
         for layer_size in hidden_sizes:
             mlp.append(nn.Linear(prev_size, layer_size))
@@ -52,7 +53,8 @@ class HPNet(BaseNet):
         self.networks = networks
     
     def forward(self,
-                xnn_cr:torch.Tensor) -> torch.Tensor:
+                xnn_cr:torch.Tensor,
+                xnn_hL:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
@@ -65,6 +67,7 @@ class HPNet(BaseNet):
         """
         
         # Command MLP
-        ynn = self.networks["mlp"](xnn_cr)     
+        xnn = torch.cat((xnn_cr, xnn_hL), dim=1)
+        ynn = self.networks["mlp"](xnn)     
 
         return ynn
