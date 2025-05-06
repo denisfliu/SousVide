@@ -1,18 +1,14 @@
-import numpy as np
 import os
-import time
 import torch
-from torch import NoneType, nn
-from torch.utils.data import DataLoader,Dataset
+from torch.utils.data import Dataset
 from tqdm.notebook import trange
 from sousvide.control.pilot import Pilot
 from typing import List,Tuple,Literal,Union,Dict,Any
-from enum import Enum
 
 class ObservationData(Dataset):
     def __init__(self,
-                 Xnn:List[List[Union[torch.Tensor,Dict[str,torch.Tensor]]]],
-                 Ynn:List[Union[torch.Tensor,Dict[str,torch.Tensor]]]):
+                 Xnn:list[list[torch.Tensor|dict[str,torch.Tensor]]],
+                 Ynn:list[torch.Tensor|dict[str,torch.Tensor]]):
         """
         Initialize the Observation Data.
 
@@ -40,7 +36,7 @@ class ObservationData(Dataset):
     
 def squeeze_data(data:Any):
     if isinstance(data, torch.Tensor):
-        return data.squeeze()  # Squeeze tensor
+        return data.squeeze(0)  # Squeeze tensor
     elif isinstance(data, list):
         return [squeeze_data(item) for item in data]  # Recursively process lists
     elif isinstance(data, dict):
@@ -72,8 +68,8 @@ def generate_dataset(data_path:str,device:torch.device) -> Dataset:
 def get_data_paths(cohort_name:str,
                    student_name:str,
                    topic_name:str,
-                   course_name:Union[str,None]=None
-                   ) -> Tuple[List[str],str]:
+                   course_name:str|None=None
+                   ) -> tuple[list[str],str]:
     """
     Get the paths to the observation data files for training or testing. If mode is 'train',
     the paths are shuffled. This way, we can mix the course data a little better. However, we

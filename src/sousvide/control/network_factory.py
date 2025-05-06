@@ -5,17 +5,15 @@ import sousvide.control.network_helper as nh
 
 from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
+from sousvide.control.networks.fonet import FONet
 from sousvide.control.networks.sifu import SIFU
 from sousvide.control.networks.sift import SIFT
-from sousvide.control.networks.ranetv1 import RANetv1
-from sousvide.control.networks.ranetv2 import RANetv2
+from sousvide.control.networks.ranet import RANet
 from sousvide.control.networks.hpnet import HPNet
 from sousvide.control.networks.svnet import SVNet
 from sousvide.control.networks.afnet import AFNet
-from sousvide.control.networks.jrnetv1 import JRNetv1
-from sousvide.control.networks.jrnetv2 import JRNetv2
-from sousvide.control.networks.jrnetv3 import JRNetv3
-from sousvide.control.networks.jrnetv4 import JRNetv4
+from sousvide.control.networks.jrnet import JRNet
+from sousvide.control.networks.cmnet import CMNet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -48,16 +46,15 @@ def generate_network(
         if network_type == "simple":
             network = BaseNet(**net_config)
         # Feature Extractors
-        # ==========>
+        elif network_type == "fonet":
+            network = FONet(**net_config)
         # History Networks
         elif network_type == "sifu":
             network = SIFU(**net_config)
         elif network_type == "sift":
             network = SIFT(**net_config)
-        elif network_type == "ranetv1":
-            network = RANetv1(**net_config)
-        elif network_type == "ranetv2":
-            network = RANetv2(**net_config)
+        elif network_type == "ranet":
+            network = RANet(**net_config)
         # Command Networks
         elif network_type == "hpnet":
             network = HPNet(**net_config)
@@ -65,14 +62,10 @@ def generate_network(
             network = SVNet(**net_config)
         elif network_type == "afnet":
             network = AFNet(**net_config)
-        elif network_type == "jrnetv1":
-            network = JRNetv1(**net_config)
-        elif network_type == "jrnetv2":
-            network = JRNetv2(**net_config)
-        elif network_type == "jrnetv3":
-            network = JRNetv3(**net_config)
-        elif network_type == "jrnetv4":
-            network = JRNetv4(**net_config)
+        elif network_type == "jrnet":
+            network = JRNet(**net_config)
+        elif network_type == "cmnet":
+            network = CMNet(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

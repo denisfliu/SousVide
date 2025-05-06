@@ -10,10 +10,10 @@
             "nf","wx","wy","wz"
         ]
     ],
-    "flight_path": [
+    "fo_horizon": [
         [ null ],
         [
-            "Lu", "Lv", "Ru", "Rv"
+            "x","y","z", "psi"
         ]
     ],
     "features": [

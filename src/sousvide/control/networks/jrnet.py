@@ -4,21 +4,21 @@ import sousvide.control.network_helper as nh
 from torch import nn
 from sousvide.control.networks.base_net import BaseNet
 
-class RANetv1(BaseNet):
+class JRNet(BaseNet):
     def __init__(self,
                  inputs:  dict[str, list[list[int|str]]],
                  outputs: dict[str, dict[str, list[list[int|str]]]],
                  layers:  dict[str, int|list[int]],
-                 network_type="jrnetv1"):
+                 network_type="jrnet"):
         """
-        Initialize a Rapid Adaptation v1 Network model.
+        Initialize a Jorim Network model.
 
         The network takes in a current input and a history input into
         a transformer and outputs a motor command.
         """
 
         # Initialize the parent class
-        super(RANetv1, self).__init__(inputs,outputs,network_type)
+        super(JRNet, self).__init__(inputs,outputs,network_type)
 
         # Unpack network configs from config
         dropout = layers["dropout"]
@@ -32,30 +32,9 @@ class RANetv1(BaseNet):
         output_size = output_sizes[0]
 
         # Populate the network
-        state_embed = nn.Sequential(
-            nn.Linear(d_state, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, d_model)
-        )
-        input_embed = nn.Sequential(
-            nn.Linear(d_input, 128),
-            nn.ReLU(),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, d_model)
-        )
+        state_embed = nn.Linear(d_state, d_model)
+        input_embed = nn.Linear(d_input, d_model)
         pos_encoding = nh.generate_positional_encoding(d_model)
-
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=num_heads,
-            dim_feedforward=d_ff,
-            dropout=dropout,
-            batch_first=True,
-            activation='gelu')
-        encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         decoder_layer = nn.TransformerDecoderLayer(
             d_model=d_model,
@@ -68,22 +47,14 @@ class RANetv1(BaseNet):
 
         head = nn.Sequential(
             nn.LayerNorm(d_model),
-            nn.Linear(d_model, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, output_size)
+            nn.Linear(d_model, output_size),
         )
 
         # Class Variables
-        # self.pos_encoding = nn.Parameter(pos_encoding, requires_grad=False)
-        self.pos_encoding = nn.Parameter(torch.randn(1,100, d_model))
+        self.pos_encoding = nn.Parameter(pos_encoding, requires_grad=False)
         self.networks = nn.ModuleDict({
             "state_embed": state_embed,
             "input_embed": input_embed,
-            "encoder": encoder,
             "decoder": decoder,
             "head": head
         })
@@ -110,15 +81,14 @@ class RANetv1(BaseNet):
         xnn_in = xnn_hy2.flip(0)
         Nwd_st,Nwd_in = xnn_st.shape[1],xnn_in.shape[1]
         
-        enc_mask = torch.triu(torch.full((Nwd_in, Nwd_in), float('-inf')), diagonal=1).to(xnn_in.device)
-        mem_mask = torch.triu(torch.full((Nwd_st, Nwd_in), float('-inf')), diagonal=1).to(xnn_st.device)
-        tgt_mask = torch.triu(torch.full((Nwd_st, Nwd_st), float('-inf')), diagonal=1).to(xnn_st.device)
-
-        xnn_enc = self.networks["input_embed"](xnn_in) + self.pos_encoding[:,:Nwd_in,:]
-        xnn_mem = self.networks["encoder"](xnn_enc,mask=enc_mask)
-        xnn_tgt = self.networks["state_embed"](xnn_st) + self.pos_encoding[:,:Nwd_st,:]
+        tgt = self.networks["state_embed"](xnn_st) + self.pos_encoding[:,:Nwd_st,:]
+        mem = self.networks["input_embed"](xnn_in) + self.pos_encoding[:,:Nwd_in,:]
         
-        znn = self.networks["decoder"](xnn_tgt, xnn_mem, tgt_mask=tgt_mask, memory_mask=mem_mask)
+        mem_mask = torch.triu(torch.full((Nwd_st, Nwd_in), float('-inf')), diagonal=1)
+        mem_mask = mem_mask.to(xnn_st.device)
+
+        znn = self.networks["decoder"](tgt, mem, memory_mask=mem_mask)
+
         ynn = self.networks["head"](znn[:,-1,:])
         
         return ynn

@@ -24,16 +24,25 @@
                 }
             },
             "layers": {
-                "dropout": 0.1,
+                "dropout": 0.0,
                 "hidden_sizes": [64, 32]
             }
         },
         "commNet": {
-            "network_type": "hpnet",
+            "network_type": "svnet",
             "inputs": {
-                "current": [
+                "rgb_image": [
+                    224, 224, ["r", "g", "b"]
+                ],
+                "current1": [
                     [
-                        "px", "py", "pz",
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
@@ -47,7 +56,9 @@
             },
             "layers": {
                 "dropout": 0.1,
-                "hidden_sizes": [100, 100]
+                "sqnet_size": 1000,
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2
             }
         }
     },

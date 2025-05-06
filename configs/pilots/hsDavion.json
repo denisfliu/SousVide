@@ -1,31 +1,53 @@
 {
     "hz": 20,
     "networks": {
-        "commNet": {
-            "network_type": "jrnetv1",
+        "histNet": {
+            "network_type": "sifu",
             "inputs": {
-                "history1": [
-                    [0, 5, 10, 15, 20, 25],
-                    [
-                        "px", "py", "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
-                "history2": [
-                    [0, 5, 10, 15, 20, 25],
+                "history": [
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
+                        "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw",
                         "nf", "wx", "wy", "wz"
                     ]
+                ]
+            },
+            "outputs": {
+                "fpass": {
+                    "histLat": [ 8 ]
+                },
+                "label": {
+                    "resultant": [ ["fx", "fy", "fz"] ]
+                }
+            },
+            "layers": {
+                "dropout": 0.0,
+                "hidden_sizes": [64, 32]
+            }
+        },
+        "commNet": {
+            "network_type": "svnet",
+            "inputs": {
+                "rgb_image": [
+                    224, 224, ["r", "g", "b"]
                 ],
-                "current": [
+                "current1": [
                     [
-                        "px", "py", "pz",
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "pz",
                         "vx", "vy", "vz",
                         "qx", "qy", "qz", "qw"
                     ]
-                ]
+                ],
+                "histLat": [ 8 ]
             },
             "outputs": {
                 "command": [
@@ -34,10 +56,9 @@
             },
             "layers": {
                 "dropout": 0.1,
-                "d_model": 64,
-                "d_ff": 128,
-                "num_heads": 4,
-                "num_layers": 3
+                "sqnet_size": 1000,
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2
             }
         }
     },

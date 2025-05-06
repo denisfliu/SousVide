@@ -164,6 +164,7 @@ class Pilot(BaseController):
         """
         Function that generates znn and Znn variables for the neural network model.
         """
+
         znn,Znn = {},{}
         for key,network in self.policy.networks.items():
             _,fp_size,_ = network.get_io_sizes()

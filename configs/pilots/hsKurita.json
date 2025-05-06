@@ -1,51 +1,64 @@
 {
     "hz": 20,
     "networks": {
-        "commNet": {
-            "network_type": "jrnetv2",
+        "histNet": {
+            "network_type": "sifu",
             "inputs": {
-                "history1": [
-                    [0, 1, 2, 3, 4, 5],
-                    [
-                        "px", "py", "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
-                "history2": [
-                    [0, 1, 2, 3, 4, 5],
+                "history": [
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "nf", "wx", "wy", "wz"
-                    ]
-                ],
-                "current": [
-                    [
-                        "px", "py", "pz",
+                        "pz",
                         "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
                     ]
                 ]
             },
             "outputs": {
                 "fpass": {
-                    "command": [
-                        ["nf", "wx", "wy", "wz"]
-                    ]
+                    "histLat": [ 8 ]
                 },
                 "label": {
-                    "command": [
-                        ["nf", "wx", "wy", "wz"]
-                    ],
-                    "parameters": [ ["m", "kt"] ]
+                    "resultant": [ ["fx", "fy", "fz"] ]
                 }
             },
             "layers": {
+                "dropout": 0.0,
+                "hidden_sizes": [64, 32]
+            }
+        },
+        "commNet": {
+            "network_type": "svnet",
+            "inputs": {
+                "rgb_image": [
+                    224, 224, ["r", "g", "b"]
+                ],
+                "current1": [
+                    [
+                        "pz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "histLat": [ 8 ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "layers": {
                 "dropout": 0.1,
-                "d_model": 64,
-                "d_ff": 128,
-                "num_heads": 4,
-                "num_layers": 3
+                "sqnet_size": 1000,
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2
             }
         }
     },

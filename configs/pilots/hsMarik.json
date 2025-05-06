@@ -1,43 +1,35 @@
 {
     "hz": 20,
     "networks": {
-        "commNet": {
-            "network_type": "jrnetv1",
+        "histNet": {
+            "network_type": "sift",
             "inputs": {
-                "history1": [
-                    [0, 1, 2, 3, 4, 5],
-                    [
-                        "px", "py", "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
-                "history2": [
-                    [0, 1, 2, 3, 4, 5],
+                "history": [
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
-                        "nf", "wx", "wy", "wz"
-                    ]
-                ],
-                "current": [
-                    [
                         "px", "py", "pz",
                         "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
                     ]
                 ]
             },
             "outputs": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
+                "fpass": {
+                    "histLat": [ 8 ]
+                },
+                "label": {
+                    "forces": [ ["fx","fy","fz"] ]
+                }
             },
             "layers": {
-                "dropout": 0.1,
+                "dropout": 0.0,
                 "d_model": 32,
                 "d_ff": 64,
                 "num_heads": 4,
-                "num_layers": 2
+                "num_layers": 2,
+                "hidden_sizes": [16]
             }
         }
     },

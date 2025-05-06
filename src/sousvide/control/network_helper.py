@@ -3,9 +3,11 @@ import json
 import torch
 import math
 
-from typing import List,Union,Dict,Literal
+import sousvide.visualize.rich_utilities as ru
 
-def get_max_length(io_idxs: Dict[str,List[torch.Tensor]]) -> int:
+from typing import Literal
+
+def get_max_length(io_idxs: dict[str,list[torch.Tensor]]) -> int:
     """
     Get the maximum sequence length of the inputs/outputs.
 
@@ -27,7 +29,7 @@ def get_max_length(io_idxs: Dict[str,List[torch.Tensor]]) -> int:
 
     return max_seq
 
-def get_io_refr(io_type:Literal["basic","sequence","image"]) -> Dict[str, List[List[Union[str,int]]]]:
+def get_io_refr(io_type:Literal["basic","sequence","image"]) -> dict[str, list[list[str|int]]]:
     """
     Get the input/output reference dictionary.
 
@@ -47,7 +49,7 @@ def get_io_refr(io_type:Literal["basic","sequence","image"]) -> Dict[str, List[L
 
     return io_refr
 
-def get_io_dims(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]]) -> int:
+def get_io_dims(io_idxs:dict[str,list[slice|torch.Tensor]]) -> int:
     """
     Get the dimensions of the input/output.
 
@@ -65,7 +67,7 @@ def get_io_dims(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]]) -> int:
 
     return io_dims
 
-def get_io_size(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]],
+def get_io_size(io_idxs:dict[str,list[slice|torch.Tensor]],
                 expanded:bool=False) -> int:
     """
     Get the total size of the input/output.
@@ -88,7 +90,7 @@ def get_io_size(io_idxs:Dict[str,List[Union[slice,torch.Tensor]]],
         return sum(io_size)
 
 
-def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,List[Union[slice,torch.Tensor]]] :
+def get_io_idxs(io_cfgs: dict[str, list[list[int|str]]]) -> dict[str,list[slice|torch.Tensor]] :
     """
     Extract the indices of the inputs/outputs. Inputs/outputs are defined to be one of the following:
         
@@ -153,9 +155,9 @@ def get_io_idxs(io_cfgs: Dict[str, List[List[Union[int, str]]]]) -> Dict[str,Lis
 
     return io_idxs
 
-def extract_io(io_srcs:Dict[str,torch.Tensor],
-               io_idxs:Union[None,Dict[str,List[Union[slice,torch.Tensor]]]],
-               use_tensor:bool=False,flatten:bool=False) -> Dict[str,List[torch.Tensor]]:
+def extract_io(io_srcs:dict[str,torch.Tensor],
+               io_idxs:None|dict[str,list[slice|torch.Tensor]],
+               use_tensor:bool=False,flatten:bool=False) -> dict[str,list[torch.Tensor]]:
     """
     Extract the inputs/outputs from the input/output tensor. The first dimension of the tensor is
     assumed to be the batch dimension and hence is left untouched.
@@ -190,7 +192,7 @@ def extract_io(io_srcs:Dict[str,torch.Tensor],
 
                 # Move indices to the same device as the input/output tensor
                 idxs = idxs.to(data.device)
-        
+
                 # Apply index selection along the current dimension
                 data = torch.index_select(data, dim+1, idxs)
 

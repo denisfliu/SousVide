@@ -22,9 +22,12 @@
         [ "nf","wx","wy","wz" ]
     ],
     "parameters": [
-        [ "m","kt" ]
+        [ "m", "kt" , "c" ]
     ],
     "forces": [
+        [ "fx","fy","fz" ]
+    ],
+    "resultant": [
         [ "fx","fy","fz" ]
     ],
     "histLat": [

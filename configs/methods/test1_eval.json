@@ -16,7 +16,6 @@
     "rollout": {
         "frequency": 100,
         "delay": 0.0,
-        "external_forces": null,
         "noise": {
             "model": null,
             "sensor": null

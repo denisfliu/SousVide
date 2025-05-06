@@ -30,8 +30,9 @@ class VitB16(nn.Module):
 class DINOv2(nn.Module):
     def __init__(self):
         super().__init__()
-        self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+
         # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+        self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
 
     def forward(self, x):
         x = self.vit.get_intermediate_layers(x,12)[-1]

@@ -113,13 +113,14 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
 
                 # Generate rollout data
                 Trajectories,Images = generate_rollouts(
-                    simulator,controller,tXUd,obj,
+                    simulator,controller,tXUd,obj,bframe,
                     Frames,Perturbations,
                     dt_ro,method["tol_select"],
                     idx_bt,sample_bar)
 
                 # Update the observations progress bar
                 progress.update(sample_task,description=sample_desc2)
+                progress.refresh()
 
                 # Save the rollout data
                 save_rollouts(cohort_name,course_name,
@@ -131,8 +132,8 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
 
                 # Update the progress bar
                 course_desc = ru.get_data_description(course_name,Ndata,subunits=subunits)
-                progress.update(course_task,
-                                description=course_desc,advance=1)
+                progress.update(course_task,description=course_desc,advance=1)
+                progress.refresh()
 
             # Ensure progress catches last update
             progress.refresh()
@@ -141,8 +142,9 @@ def generate_rollouts(
         simulator:Simulator,
         controller:VehicleRateMPC,
         tXUd:np.ndarray,obj:np.ndarray,
-        Frames:dict[str,np.ndarray,str|int|float],
-        Perturbations:dict[str,float|np.ndarray],
+        bframe:dict[str,np.ndarray,str|int|float],
+        Frames:list[dict[str,np.ndarray,str|int|float]],
+        Perturbations:list[dict[str,float|np.ndarray]],
         dt_ro:float,tol_select:float,
         idx_set:int,
         progress_bar:tuple[ru.Progress,int]=None,
@@ -161,8 +163,8 @@ def generate_rollouts(
         controller:     Controller object.
         tXUd:           Trajectory rollout.
         obj:            Objective vector.
-        course:         Course configuration dictionary.
-        Frames:         List of drone configurations.
+        bframe:         Base frame for the quadcopter.
+        Frames:         List of drone frame configurations.
         Perturbations:  List of perturbed initial states.
         dt_ro:          Rollout duration.
         tol_select:     Error tolerance.
@@ -202,9 +204,15 @@ def generate_rollouts(
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
         if err < tol_select:
+            # Compute Additional Variables
+            prms = svu.compute_prms(frame)
+            Fres = svu.compute_Fres(Xro,Uro,Fro,frame,bframe)
+            FOro = svu.compute_FOro(Tro,Xro,Uro,Fro,frame)
+            
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
+                "params":prms,"Fres":Fres,"FOro":FOro,
                 "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
@@ -222,6 +230,7 @@ def generate_rollouts(
             if progress_bar is not None:
                 progress,sample_task = progress_bar
                 progress.update(sample_task,advance=1)
+                progress.refresh()
         else:
             if debug:
                 console.print(
@@ -232,7 +241,8 @@ def generate_rollouts(
             if progress_bar is not None:
                 progress,sample_task = progress_bar
                 progress.update(sample_task,total=Ndata)
-            
+                progress.refresh()
+
     return Trajectories,Images
 
 def save_rollouts(cohort_name:str,course_name:str,
