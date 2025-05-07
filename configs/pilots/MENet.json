@@ -1,31 +1,41 @@
 {
     "hz": 20,
     "networks": {
-        "histNet": {
-            "network_type": "sifu",
+        "commNet": {
+            "network_type": "menet",
             "inputs": {
-                "history": [
-                    [ 0, 1, 2, 3, 4],
+                "current": [
                     [
-                        "dt",
                         "px", "py", "pz",
                         "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw",
-                        "nf", "wx", "wy", "wz"
+                        "qx", "qy", "qz", "qw"
                     ]
                 ]
             },
             "outputs": {
                 "fpass": {
-                    "histLat": [ 8 ]
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ]
                 },
                 "label": {
-                    "forces": [ ["fx","fy","fz"] ]
+                    "fo_horizon": [
+                        [ 0, 5, 10, 15, 20],
+                        [
+                            "x", "y", "z", "psi"
+                        ]
+                    ],
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ]
                 }
+
             },
             "layers": {
-                "dropout": 0.0,
-                "hidden_sizes": [64, 32]
+                "number_of_experts": 10,
+                "exp_hidden_sizes": [32, 32],
+                "cmd_hidden_sizes": [32, 32]
+
             }
         }
     },

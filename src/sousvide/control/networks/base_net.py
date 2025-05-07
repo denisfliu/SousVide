@@ -77,6 +77,15 @@ class BaseNet(nn.Module, ABC):
     def get_io_sizes(self,expanded:bool=False) -> int:
         """
         Get the output size of the network.
+
+        Args:
+            expanded:   If True, return the expanded size of the network.
+                        If False, return the size of the network.
+
+        Returns:
+            Nx:         Input size.
+            Ny_fp:      Forward-pass output size.
+            Ny_lb:      Label output size.
         """
 
         Nx = nh.get_io_size(self.input_indices,expanded)

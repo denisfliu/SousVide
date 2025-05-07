@@ -23,33 +23,79 @@ transform = A.Compose([                                             # Image tran
 process_image = lambda x: transform(image=x)["image"]
 
 
-def overlay_heatmap_on_image(heatmap, image, colormap='viridis', alpha=0.5):
+def compute_similarity(target:torch.Tensor, patches:torch.Tensor):
+
+    Nr,Nc = patches.shape[0],patches.shape[1]
+    cSm = torch.zeros((Nr,Nc))
+    for i in range(Nr):
+        for j in range(Nc):
+            # Compute the similarity between the target and each patch
+            cSm[i,j] = torch.cosine_similarity(target, patches[i,j], dim=0)
+
+    return cSm
+
+def get_patch_indices(cSm:torch.Tensor, threshold:float=0.8, max_patches:int=1):
+    """
+    Get the indices of the patches that are above a certain similarity threshold.
+    
+    Args:
+        cSm: cosine similarity matrix
+        threshold: similarity threshold
+        max_patches: maximum number of patches to return
+
+    Returns:
+        indices: list of tuples (i, j) for patches above the threshold
+    """
+    flat = cSm.flatten()
+    mask = flat >= threshold
+    values = flat[mask]
+
+    if values.numel() == 0:
+        return torch.empty((0, 2), dtype=torch.long)
+
+    # Get original flat indices above threshold
+    flat_indices = torch.nonzero(mask, as_tuple=False).squeeze(1)
+
+    # If too many, take top-k
+    if values.numel() > max_patches:
+        topk = torch.topk(values, max_patches)
+        flat_indices = flat_indices[topk.indices]
+
+    # Convert to 2D (row, col)
+    rows, cols = torch.div(flat_indices, cSm.shape[1], rounding_mode='floor'), flat_indices % cSm.shape[1]
+    
+    return torch.stack([rows, cols], dim=1)
+
+def similarity_overlay(idxs:torch.Tensor,image:np.ndarray,
+                       Nr:int=16,Nc:int=16,colormap='seismic', alpha=0.5):
     """
     Overlay a 16x16 heatmap on a 360x640 RGB image.
     
     Args:
-        heatmap: (16, 16) array, float or uint8
-        image: (360, 640, 3) RGB image (uint8)
-        colormap: name of a matplotlib colormap
-        alpha: blending factor [0 = only image, 1 = only heatmap]
-
+        idxs: indices of the patches to overlay
+        image: RGB image (H, W, 3)
+        Nr: number of rows in the heatmap
+        Nc: number of columns in the heatmap
+        colormap: colormap to use for the overlay
     Returns:
         overlayed RGB image (uint8)
     """
-    if isinstance(heatmap, torch.Tensor):
-        heatmap = heatmap.cpu().numpy()
-        
-    # Normalize heatmap to [0, 1]
-    heatmap = heatmap.astype(np.float32)
-    heatmap -= heatmap.min()
-    heatmap /= (heatmap.max() + 1e-8)
+
+    # Create a blank heatmap
+    heatmap = torch.zeros((Nr, Nc))
+    for idx in idxs:
+        i, j = idx[0].item(), idx[1].item()
+        heatmap[i, j] = 1.0
 
     # Resize heatmap to match image size
-    heatmap_resized = cv2.resize(heatmap, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_CUBIC)
+    heatmap_np = heatmap.unsqueeze(0).unsqueeze(0)  # (1, 1, 16, 16)
+    upsampled = torch.nn.functional.interpolate(
+        heatmap_np, size=image.shape[:2], mode='nearest'
+    ).squeeze().numpy()  # (H, W)
 
     # Apply colormap
     cmap = plt.get_cmap(colormap)
-    heatmap_colored = cmap(heatmap_resized)[:, :, :3]  # drop alpha
+    heatmap_colored = cmap(upsampled)[:, :, :3]  # drop alpha
     heatmap_colored = (heatmap_colored * 255).astype(np.uint8)
 
     # Blend with original image

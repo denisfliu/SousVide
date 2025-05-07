@@ -54,6 +54,7 @@ class SIFU(BaseNet):
 
         Returns:
             ynn:    Output tensor.
+            ann:    Auxiliary outputs dictionary (if any).
         """
 
         # Flatten the input tensor
@@ -65,4 +66,4 @@ class SIFU(BaseNet):
         else:
             ynn = self.networks(znn)
         
-        return ynn
+        return ynn,{}

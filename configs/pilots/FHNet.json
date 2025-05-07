@@ -1,8 +1,8 @@
 {
     "hz": 20,
     "networks": {
-        "featNet": {
-            "network_type": "fonet",
+        "commNet": {
+            "network_type": "fhnet",
             "inputs": {
                 "current": [
                     [
@@ -14,33 +14,28 @@
             },
             "outputs": {
                 "fpass": {
-                    "featLat": [ 16 ]
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ]
                 },
                 "label": {
-                    "fo_horizon": [ 
-                        [ 0, 5, 10, 15],
-                        [ "x", "y", "z", "psi" ]
+                    "fo_horizon": [
+                        [0, 5, 10, 15, 20],
+                        [
+                            "x", "y", "z", "psi"
+                        ]
+                    ],
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
                     ]
                 }
+
             },
             "layers": {
                 "dropout": 0.0,
-                "hidden_sizes": [32, 32]
-            }
-        },
-        "commNet": {
-            "network_type": "cmnet",
-            "inputs": {
-                "featLat": [ 16 ]
-            },
-            "outputs": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
-            },
-            "layers": {
-                "dropout": 0.0,
-                "hidden_sizes": [64, 32]
+                "hzn_hidden_sizes": [32, 32],
+                "cmd_hidden_sizes": [32, 32]
+
             }
         }
     },

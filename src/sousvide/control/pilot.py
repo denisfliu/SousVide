@@ -173,7 +173,35 @@ class Pilot(BaseController):
             Znn[key] = torch.zeros((1,nhy,fp_size))
 
         return znn,Znn
-    
+
+    def set_initial_memory(self,x0:np.ndarray,u0:np.ndarray|None=None) -> None:
+        """
+        Function that sets the initial states of the pilot.
+
+        Args:
+            x0: Initial state.
+            u0: Initial control input.
+
+        Returns:
+            None
+        """
+
+        # Educated guess for hover
+        if u0 is None:
+            u0 = np.array([-0.4,0.0,0.0,0.0])        
+
+        # Convert Non-Torch Tensor Variables to Torch Tensors on GPU
+        x0 = torch.from_numpy(x0).float().to(self.device).unsqueeze(0)
+        u0 = torch.from_numpy(u0).float().to(self.device).unsqueeze(0)
+        
+        # Set the initial states
+        self.txupr[0,1:11] = self.txcr[0,1:11] = x0
+        self.txupr[0,11:15] = u0
+
+        for i in range(self.Dnn.shape[1]):
+            self.Dnn[0,i,1:11] = x0
+            self.Dnn[0,i,11:15] = u0
+
     def observe(self,
                 upr:np.ndarray|torch.Tensor,
                 tcr:float|torch.Tensor,xcr:np.ndarray|torch.Tensor,

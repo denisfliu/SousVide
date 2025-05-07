@@ -199,7 +199,7 @@ def generate_rollouts(
         controller.update_frame(frame)    
 
         # Simulate the flight
-        Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0)
+        Tro,Xro,Uro,Iro,Dro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0)
 
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
@@ -218,7 +218,7 @@ def generate_rollouts(
                 "frame":frame}
 
             images = {
-                "images":Iro,
+                "rgb":Iro,"depth":Dro,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3)
             }
 

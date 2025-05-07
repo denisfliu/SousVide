@@ -93,6 +93,7 @@ class SVNet(BaseNet):
 
         Returns:
             ynn:    Output tensor.
+            ann:    Auxiliary outputs dictionary (if any).
         """
 
         # Feature extraction
@@ -106,4 +107,4 @@ class SVNet(BaseNet):
         znn = torch.cat([znn,xnn_cr2,xnn_hL],dim=1)
         ynn = self.networks["mlp1"](znn)     
 
-        return ynn
+        return ynn,{}

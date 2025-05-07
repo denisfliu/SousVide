@@ -196,7 +196,7 @@ def extract_io(io_srcs:dict[str,torch.Tensor],
                 # Apply index selection along the current dimension
                 data = torch.index_select(data, dim+1, idxs)
 
-            xnn.append(data)
+            xnn.append(data.view(data.size(0), -1))
 
     # Convert to tensor if requested
     if use_tensor:

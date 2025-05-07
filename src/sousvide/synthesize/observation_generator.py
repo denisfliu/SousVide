@@ -145,14 +145,15 @@ def generate_observations(pilot:Pilot,
         frame,params = traj_data["frame"],traj_data["params"]
     
         # Decompress and extract the image data if compressed
-        Imgs = dch.decompress_data(imgs_data)["images"]
+        Imgs:dict[str,np.ndarray] = dch.decompress_data(imgs_data)
+        Rgbs,Dpts = Imgs["rgb"],Imgs["depth"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.
-        height,width = Imgs.shape[1],Imgs.shape[2]
+        height,width = Rgbs.shape[1],Rgbs.shape[2]
 
         if height == 224 and width == 224:
-            Imgs = np.transpose(Imgs, (0, 3, 1, 2))
+            Rgbs = np.transpose(Rgbs, (0, 3, 1, 2))
 
         Xnn,Ynn = [],[]
         upr = np.zeros(4)
@@ -175,7 +176,8 @@ def generate_observations(pilot:Pilot,
             tcr,ucr = Tro[k],Uro[:,k]            
             txcr = np.hstack((Tro[k],Xro[:,k]))
             fcr,frs = Fro[:,k],Fres[:,k]
-            img_cr = Imgs[k,:,:,:]
+            rgb_cr = Rgbs[k,:,:,:]
+            dpt_cr = Dpts[k,:,:,:]
 
             # Calculate flat output horizon
             FOhn = FOro[k:k+Nhn,:,0]
@@ -192,7 +194,7 @@ def generate_observations(pilot:Pilot,
             }
             
             # Rollout and collect the inputs
-            _,znn_cr,xnn_cr,_ = pilot.OODA(upr,tcr,xcr,obj,img_cr,znn_cr)
+            _,znn_cr,xnn_cr,_ = pilot.OODA(upr,tcr,xcr,obj,rgb_cr,znn_cr)
 
             # Extract the labels from source and trim inputs if they don't exist
             ynn_cr = {}
@@ -202,7 +204,7 @@ def generate_observations(pilot:Pilot,
                                                 use_tensor=True,flatten=True)
 
             # Collect data conditioned on subsample step and history window
-            if k % nss == 0 and k < Ndata - Nhn:
+            if k % nss == 0:
                 Xnn.append(xnn_cr)
                 Ynn.append(ynn_cr)
 

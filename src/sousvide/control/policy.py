@@ -85,7 +85,7 @@ class Policy(nn.Module):
             xnn_key = next(iter(network.fpass_indices))
 
             # Forward Pass through the Network
-            ynn_net = network(*xnn_net)
+            ynn_net,_ = network(*xnn_net)
             
             # Update xnn_srcs
             xnn_srcs[xnn_key] = ynn_net

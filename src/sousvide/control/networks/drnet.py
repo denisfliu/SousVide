@@ -1,40 +1,37 @@
 import torch
-import sousvide.control.network_helper as nh
 
 from torch import nn
-from torchvision.models import (
-    squeezenet1_1
-)
+
 from sousvide.control.networks.base_net import BaseNet
 
-class HPNet(BaseNet):
+class DRNet(BaseNet):
     def __init__(self,
                  inputs:  dict[str, list[list[int|str]]],
                  outputs: dict[str, dict[str, list[list[int|str]]]],
                  layers:  dict[str, int|list[int]],
-                 network_type="hpnet"):
+                 network_type="drnet"):
         """
-        Initialize a HotPot Network model.
+        Initialize a Direct Regression Network model.
 
-        The network takes in a current input and a history inputs into an MLP
-        and outputs a motor command.
+        The network takes in a current input into an MLP
+        and outputs a body rate command.
 
         """
 
         # Initialize the parent class
-        super(HPNet, self).__init__(inputs,outputs,network_type)
+        super(DRNet, self).__init__(inputs,outputs,network_type)
 
         # Unpack network configs from config
         dropout = layers["dropout"]
         hidden_sizes = layers["hidden_sizes"]
 
         # Unpack network configs from parent
-        input_sizes,_,output_sizes = self.get_io_sizes(expanded=True)
-        input_size = sum(input_sizes)
-        output_size = output_sizes[0]
+        in_sizes,fp_sizes,_ = self.get_io_sizes(expanded=True)
 
         # Populate the network
-        prev_size = input_size
+        prev_size = sum(in_sizes)
+        output_size = fp_sizes[0]
+
         mlp = []
         for layer_size in hidden_sizes:
             mlp.append(nn.Linear(prev_size, layer_size))
@@ -52,13 +49,12 @@ class HPNet(BaseNet):
         # Class Variables
         self.networks = networks
     
-    def forward(self,xnn_cr:torch.Tensor,xnn_hL:torch.Tensor) -> torch.Tensor:
+    def forward(self,xnn_cr:torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
         Args:
-            xnn_cr: Current input (second instance).
-            xnn_hL: History Network input.
+            xnn_cr: Current input.
 
         Returns:
             ynn:    Output tensor.
@@ -66,7 +62,6 @@ class HPNet(BaseNet):
         """
         
         # Command MLP
-        xnn = torch.cat((xnn_cr, xnn_hL), dim=1)
-        ynn = self.networks["mlp"](xnn)     
+        ynn = self.networks["mlp"](xnn_cr)     
 
         return ynn,{}

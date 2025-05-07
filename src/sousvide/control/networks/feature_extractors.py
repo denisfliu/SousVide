@@ -4,6 +4,7 @@ from torchvision.models import (
     vit_b_16,convnext_tiny,efficientnet_v2_s,
     ViT_B_16_Weights,ConvNeXt_Tiny_Weights,EfficientNet_V2_S_Weights
 )
+import os
 
 class VitB16(nn.Module):
     def __init__(self):
@@ -31,8 +32,12 @@ class DINOv2(nn.Module):
     def __init__(self):
         super().__init__()
 
-        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
         self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        self.dpt = torch.load("../pretrained_models/dinov2_vitb14_nyu_dpt_head.pth")
+
+        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+        # self.dpt = torch.load("../pretrained_models/dinov2_vits14_nyu_dpt_head.pth")
+        print(self.dpt)
 
     def forward(self, x):
         x = self.vit.get_intermediate_layers(x,12)[-1]

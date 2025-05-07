@@ -17,7 +17,8 @@ from figs.control.vehicle_rate_mpc import VehicleRateMPC
 from figs.dynamics.external_forces import ExternalForces
 from sousvide.control.pilot import Pilot
 
-def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:str,
+def deploy_roster(cohort_name:str,
+                  deploy:tuple[str,str,str,str],
                   roster:List[str],
                   expert_name:str="Viper",expert_cname:str=None,
                   bframe_name:str="carl",
@@ -31,10 +32,8 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     video output for the last trajectory for each pilot. 
     
     Args:
-        cohort_name:    Directory to store the rollout data (and later the roster of pilots).
-        course_name:    Trajectory course to be flown.
-        gsplat_name:    3D reconstruction of the scene contained as a Gaussian Splat.
-        method_name:    Data generation method detailing the sampling and simulation configs.
+        cohort_name:    Name of the cohort to be used for the simulation.
+        deploy:         (course_name,gsplat_name,method_name) tuple.
         roster:         List of pilot names to simulate.
         expert_name:    Name of the expert pilot to be used for the simulation (default is Viper).
         expert_cname:   Name of the course to be used for the expert pilot (default is None).
@@ -47,6 +46,7 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
     """
 
     # Extract configs
+    cohort_name,course_name,gsplat_name,method_name = deploy
     course = ch.get_config(course_name,"courses")
     gsplat = ch.get_gsplat(gsplat_name)
     method = ch.get_config(method_name,"methods")
@@ -117,8 +117,11 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
             # Update the simulation variables
             simulator.update_frame(frame)
 
+            # Update pilot
+            controller.set_initial_memory(x0)
+
             # Simulate Trajectory
-            Tro,Xro,Uro,Iro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
+            Tro,Xro,Uro,Iro,Dro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
 
             # Save Trajectory
             trajectory = {
@@ -131,7 +134,7 @@ def deploy_roster(cohort_name:str,course_name:str,gsplat_name:str,method_name:st
         # Compile deployment data
         deployment_data = {
             "trajectories":trajectories,
-            "video": {"hz":controller.hz,"images":Iro}
+            "video": {"hz":controller.hz,"rgb":Iro,"depth":Dro},
         }
 
         # Update the metrics table
@@ -174,28 +177,34 @@ def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_d
 
     # Save the Data
     if is_generate:
-        for trajectory in deployment_data["trajectories"]:
-            Tro:np.ndarray = trajectory["Tro"]
-            Xro:np.ndarray = trajectory["Xro"]
-            Uro:np.ndarray = trajectory["Uro"]
-            Tsol:np.ndarray = trajectory["Tsol"]
-            tXUd,obj = trajectory["tXUd"],trajectory["obj"]
-            Adv = None
+        # TODO: Implement the generation of flight recorder data
+        pass
+        # for trajectory in deployment_data["trajectories"]:
+        #     Tro:np.ndarray = trajectory["Tro"]
+        #     Xro:np.ndarray = trajectory["Xro"]
+        #     Uro:np.ndarray = trajectory["Uro"]
+        #     Tsol:np.ndarray = trajectory["Tsol"]
+        #     tXUd,obj = trajectory["tXUd"],trajectory["obj"]
+        #     Adv = None
 
-            hz = int(1/(Tro[1]-Tro[0]))
-            flight_record = rf.FlightRecorder(
-                Xro.shape[0],Uro.shape[0],
-                hz,tXUd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
-            flight_record.simulation_import(images,Tro,Xro,Uro,tXUd,Tsol,Adv)
-            flight_record.save()        
+        #     hz = int(1/(Tro[1]-Tro[0]))
+        #     flight_record = rf.FlightRecorder(
+        #         Xro.shape[0],Uro.shape[0],
+        #         hz,tXUd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
+        #     flight_record.simulation_import(images,Tro,Xro,Uro,tXUd,Tsol,Adv)
+        #     flight_record.save()        
     else:
         data_name = "sim_"+course_name+"_"+pilot_name
         trajectories = deployment_data["trajectories"]
-        images = deployment_data["video"]["images"]
+        rgbs = deployment_data["video"]["rgb"]
+        dpts = deployment_data["video"]["depth"]
         hz = deployment_data["video"]["hz"]
         
         trajectories_path = os.path.join(deployment_path,data_name+".pt")
-        video_path = os.path.join(deployment_path,data_name+".mp4")
+
+        rgb_path = os.path.join(deployment_path,data_name+"_rgb.mp4")
+        dpt_path = os.path.join(deployment_path,data_name+"_dpt.mp4")
 
         torch.save(trajectories,trajectories_path)
-        gv.images_to_mp4(images,video_path, hz)
+        gv.images_to_mp4(rgbs,rgb_path, hz)
+        gv.images_to_mp4(dpts,dpt_path, hz)

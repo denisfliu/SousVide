@@ -15,13 +15,12 @@ from rich.progress import Progress
 from sousvide.control.pilot import Pilot
 from sousvide.control.policy import Policy
 from sousvide.control.networks.base_net import BaseNet
+from sousvide.instruct.losses import *
 from sousvide.instruct.synthesized_data import *
 import sousvide.flight.deploy_figs as df
 
-def train_roster(cohort_name:str,roster:list[str],
-                 network_name:str,Neps:int,
-                 regen:bool=False,
-                 use_deploy:None|str=None,deploy_method:None|str=None,
+def train_roster(cohort_name:str,roster:list[str],network_name:str,Neps:int,
+                 regen:bool=False,deployment:None|tuple[str,str,str]=None,
                  lim_sv:int=50,lr:float=1e-4,batch_size:int=64):
     
     # Initialize the console variable
@@ -45,20 +44,24 @@ def train_roster(cohort_name:str,roster:list[str],
 
             # Train the student
             train_student(cohort_name,student,network_name,Neps,
-                          use_deploy,deploy_method,
-                          student_bar,lim_sv,lr,batch_size)
+                          deployment,lim_sv,lr,batch_size,
+                          student_bar)
             progress.refresh()
 
 
 def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
-                  use_deploy:None|str=None,deploy_method:None|str=None,
-                  progress_bar:tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  deployment:None|tuple[str,str,str]=None,
+                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  progress_bar:tuple[Progress,int]=None
                   ) -> None:
-    
+
+    # Record the start time
+    start_time = time.time()
+
     # Pytorch Config
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
-    criterion = nn.MSELoss(reduction='mean')
+    criterion = LossFn()
 
     # Load the student
     student = Pilot(cohort_name,student_name)
@@ -80,14 +83,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
     # Some Useful Paths
     student_path = student.path
     losses_path  = os.path.join(student_path,"losses_"+network_name+".pt")
-    
-    if use_deploy is not None:
-        ckpts_path  = os.path.join(student_path,"ckpts")
 
-        # Check if the checkpoint path exists
-        if not os.path.exists(ckpts_path):
-            os.makedirs(ckpts_path)
-        
     # Load loss log if it exists
     if os.path.exists(losses_path):
         prev_losses_log = torch.load(losses_path)
@@ -101,12 +97,30 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
         "Loss_tn": [], "Loss_tt": [], "Eval_tte": [],
     }
 
-    # Record the start time
-    start_time = time.time()
+    # Run initial evaluation (if applicable)
+    if deployment is not None:
+        # Check if the checkpoint path exists
+        ckpts_path  = os.path.join(student_path,"ckpts")
+        if not os.path.exists(ckpts_path):
+            os.makedirs(ckpts_path)
 
+        # Evaluate using a deployment
+        with contextlib.redirect_stdout(io.StringIO()):
+            metric = df.deploy_roster(cohort_name,deployment,[student_name],mode="evaluate")
+
+        # Initial checkpoint
+        ckpt_name = network_name+"_ckpt"+str(0).zfill(3)
+        ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
+        torch.save(network,ckpt_path)
+
+        # Extract the metrics
+        eval0 = (0,metric[student_name]["TTE"]["mean"])
+    else:
+        eval0 = []
+        
     # Training + Testing Loop
     Loss_tn,Loss_tt = [],[]
-    Eval_tte = []
+    Eval_tte = [eval0]
     for ep in range(Neps):
         # Get Observation Data Files (Paths)
         od_train_files,od_test_files = get_data_paths(cohort_name,student.name,network_name)
@@ -121,8 +135,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             # Training
             for input,label in dataloader:
                 # Forward Pass
-                prediction = network(*input)
-                loss = criterion(prediction,label)
+                prediction,aux = network(*input)
+                loss = criterion(prediction,label,aux)
 
                 # Backward Pass
                 loss.backward()
@@ -143,8 +157,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             # Testing
             for input,label in dataloader:
                 # Forward Pass
-                prediction = network(*input)    
-                loss = criterion(prediction,label)
+                prediction,aux = network(*input)    
+                loss = criterion(prediction,label,aux)
 
                 # Save loss logs
                 epLosses_tt.append(label.shape[0]*loss.item())
@@ -173,23 +187,18 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             torch.save(network,netw_path)            
             
             # Evaluation (optional)
-            if use_deploy is not None:
+            if deployment is not None:
                 # Save as a checkpoint
                 ckpt_name = network_name+"_ckpt"+str(ep+1).zfill(3)
                 ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
                 torch.save(network,ckpt_path)
 
                 # Evaluate using a deployment
-                eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
                 with contextlib.redirect_stdout(io.StringIO()):
-                    metric = df.deploy_roster(
-                        cohort_name,eval_course,use_deploy,deploy_method,
-                        [student_name],mode="evaluate")
+                    metric = df.deploy_roster(cohort_name,deployment,[student_name],mode="evaluate")
 
                 # Extract the metrics
-                Eval_tte.append(
-                    (ep+1,metric[student_name]["TTE"]["mean"])
-                    )
+                Eval_tte.append((ep+1,metric[student_name]["TTE"]["mean"]))
             else:
                 Eval_tte.append([])
 
@@ -210,7 +219,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             torch.save(curr_losses_log,losses_path)
 
     # Pick the checkpoint with the best evaluation metric
-    if use_deploy is not None:
+    if deployment is not None:
         # Get the best checkpoint
         best_ckpt = min(Eval_tte,key=lambda x: x[1])[0]
         best_ckpt = network_name+"_ckpt"+str(best_ckpt).zfill(3)
@@ -225,6 +234,9 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
 
         # Delete the checkpoints
         shutil.rmtree(ckpts_path)
+
+        # Print the best checkpoint
+        ru.console.print(f"[bold green3]{student_name} > {network_name}[/] : Best checkpoint is {best_ckpt}.")
 
     # Cap off progress update
     progress.refresh()
