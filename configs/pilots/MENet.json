@@ -13,12 +13,7 @@
                 ]
             },
             "outputs": {
-                "fpass": {
-                    "command": [
-                        ["nf", "wx", "wy", "wz"]
-                    ]
-                },
-                "label": {
+                "prediction": {
                     "fo_horizon": [
                         [ 0, 5, 10, 15, 20],
                         [
@@ -28,8 +23,12 @@
                     "command": [
                         ["nf", "wx", "wy", "wz"]
                     ]
+                },
+                "deployment": {
+                    "command": [
+                        ["nf", "wx", "wy", "wz"]
+                    ]
                 }
-
             },
             "layers": {
                 "number_of_experts": 10,

@@ -13,12 +13,12 @@
                 ]
             },
             "outputs": {
-                "fpass": {
+                "prediction": {
                     "command": [
                         ["nf", "wx", "wy", "wz"]
                     ]
                 },
-                "label": {
+                "deployment": {
                     "fo_horizon": [
                         [0, 5, 10, 15, 20],
                         [
@@ -29,7 +29,6 @@
                         ["nf", "wx", "wy", "wz"]
                     ]
                 }
-
             },
             "layers": {
                 "dropout": 0.0,

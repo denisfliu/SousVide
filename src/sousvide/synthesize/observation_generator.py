@@ -140,7 +140,7 @@ def generate_observations(pilot:Pilot,
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
         Uro,Fro = traj_data["Uro"],traj_data["Fro"]
         Fres,FOro = traj_data["Fres"],traj_data["FOro"]
-        obj,Ndata = traj_data["obj"],traj_data["Ndata"]
+        Ndata = traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
         frame,params = traj_data["frame"],traj_data["params"]
     
@@ -166,16 +166,16 @@ def generate_observations(pilot:Pilot,
         for k in range(Ndata-Nhn):
             # Generate current state (with/without noise augmentation)
             if aug_type == "additive":
-                xcr = Xro[:,k] + np.random.normal(aug_mean,aug_std)
+                xcr = Xro[k,:] + np.random.normal(aug_mean,aug_std)
             elif aug_type == "multiplicative":
-                xcr = Xro[:,k] * (1 + np.random.normal(aug_mean,aug_std))
+                xcr = Xro[k,:] * (1 + np.random.normal(aug_mean,aug_std))
             else:
-                xcr = Xro[:,k]
+                xcr = Xro[k,:]
 
             # Extract other data
-            tcr,ucr = Tro[k],Uro[:,k]            
-            txcr = np.hstack((Tro[k],Xro[:,k]))
-            fcr,frs = Fro[:,k],Fres[:,k]
+            tcr,ucr = Tro[k],Uro[k,:]            
+            txcr = np.hstack((Tro[k],Xro[k,:]))
+            fcr,frs = Fro[k,:],Fres[k,:]
             rgb_cr = Rgbs[k,:,:,:]
             dpt_cr = Dpts[k,:,:,:]
 

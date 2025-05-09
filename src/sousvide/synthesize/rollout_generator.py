@@ -64,7 +64,7 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
         sample_task = progress.add_task(sample_desc1,total=None,units='samples')
 
         # Initialize the simulator
-        simulator = Simulator(gsplat,method["rollout"])
+        simulator = Simulator(gsplat,method)
 
         # Cycle through the courses
         for course_name in course_names:
@@ -77,7 +77,6 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
 
             Tsd,FOd = mts.get_desired_trajectory()
             tXUd = th.TsFO_to_tXU(Tsd,FOd,m_bs,kt_bs,fex)
-            obj = svu.tXU_to_obj(tXUd)
 
             # Update simulation variables
             simulator.update_forces(course["forces"])
@@ -113,7 +112,7 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
 
                 # Generate rollout data
                 Trajectories,Images = generate_rollouts(
-                    simulator,controller,tXUd,obj,bframe,
+                    simulator,controller,tXUd,bframe,
                     Frames,Perturbations,
                     dt_ro,method["tol_select"],
                     idx_bt,sample_bar)
@@ -139,15 +138,10 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
             progress.refresh()
 
 def generate_rollouts(
-        simulator:Simulator,
-        controller:VehicleRateMPC,
-        tXUd:np.ndarray,obj:np.ndarray,
-        bframe:dict[str,np.ndarray,str|int|float],
-        Frames:list[dict[str,np.ndarray,str|int|float]],
-        Perturbations:list[dict[str,float|np.ndarray]],
+        simulator:Simulator,controller:VehicleRateMPC,tXUd:np.ndarray,bframe:dict[str,np.ndarray,str|int|float],
+        Frames:list[dict[str,np.ndarray,str|int|float]],Perturbations:list[dict[str,float|np.ndarray]],
         dt_ro:float,tol_select:float,
-        idx_set:int,
-        progress_bar:tuple[ru.Progress,int]=None,
+        idx_set:int,progress_bar:tuple[ru.Progress,int]=None,
         debug:bool=False
         ) -> tuple[list[dict[str,np.ndarray]],list[torch.Tensor]]:
     """
@@ -162,7 +156,6 @@ def generate_rollouts(
         simulator:      Simulator object.
         controller:     Controller object.
         tXUd:           Trajectory rollout.
-        obj:            Objective vector.
         bframe:         Base frame for the quadcopter.
         Frames:         List of drone frame configurations.
         Perturbations:  List of perturbed initial states.
@@ -177,7 +170,6 @@ def generate_rollouts(
         Images:         List of image rollouts.
     """
     
-
     # Get console
     console = ru.get_console()
     
@@ -199,26 +191,26 @@ def generate_rollouts(
         controller.update_frame(frame)    
 
         # Simulate the flight
-        Tro,Xro,Uro,Iro,Dro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0)
+        Tro,Xro,Uro,Fro,Rgb,Dpt,Aux = simulator.simulate(controller,t0,tf,x0)
 
         # Check if the rollout data is useful
-        err = np.min(np.linalg.norm(tXUd[1:4,:]-Xro[0:3,-1].reshape(-1,1),axis=0))
+        err = np.min(np.linalg.norm(tXUd[:,1:4]-Xro[-1,0:3],axis=1))
         if err < tol_select:
             # Compute Additional Variables
             prms = svu.compute_prms(frame)
             Fres = svu.compute_Fres(Xro,Uro,Fro,frame,bframe)
             FOro = svu.compute_FOro(Tro,Xro,Uro,Fro,frame)
-            
+
             # Package the rollout data
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
                 "params":prms,"Fres":Fres,"FOro":FOro,
-                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
+                "tXUd":tXUd,"Ndata":Uro.shape[1],"Aux":Aux,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
 
             images = {
-                "rgb":Iro,"depth":Dro,
+                "rgb":Rgb,"depth":Dpt,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3)
             }
 

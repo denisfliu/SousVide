@@ -15,8 +15,6 @@
     },
     "rollout": {
         "frequency": 100,
-        "delay": 0.0,
-        "external_forces": null,
         "noise": {
             "model": null,
             "sensor": {
@@ -31,7 +29,6 @@
                     2.1e-3, 2.6e-3, 3.4e-3, 2.3e-03
                 ]
             }
-        },
-        "fusion": null
+        }
     }
 }

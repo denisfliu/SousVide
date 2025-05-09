@@ -10,54 +10,48 @@ class BaseNet(nn.Module, ABC):
 
     Args:
         inputs:         Inputs config.
-        outputs:        Outputs config.
+        prediction:     Prediction config.
+        deployment:     Deployment config.
         network_type:   Type of network.
 
     Variables:
-        input_indices:  Indices of the input.
-        fpass_indices:  Indices of the forward-pass output.
-        label_indices:  Indices of the label output.
+        in_idxs:        Indices of the input.
+        pd_idxs:        Indices of the forward-pass output.
+        dp_idxs:        Indices of the label output.
         network_type:   Type of network.
-        Nx:             Input size.
-        Ny:             Output size.
-        nhy:            Frame length flag with size as value.
+        Nhy:            Maximum history length.
         use_fpass:      Use feature forward-pass.
 
         networks:       List of neural networks.
     """
 
     def __init__(self,
-                 inputs:  dict[str, list[list[int|str]]],
-                 outputs: dict[str, dict[str, list[list[int|str]]]],
-                 network_type: str = "basenet"):
+                 inputs: dict[str, dict[str,list[int|list[int|str]]]],
+                 outputs: dict[str, dict[str,list[int|list[int|str]]]],
+                 network_type: str ):
         super().__init__()
 
         # Some useful intermediate variables
-        input_indices = nh.get_io_idxs(inputs)
+        xpd_idxs = nh.get_io_idxs(inputs)
+        ypd_idxs
 
-        if "fpass" in outputs and "label" in outputs:
-            fpass_indices = nh.get_io_idxs(outputs["fpass"])
-            label_indices = nh.get_io_idxs(outputs["label"])
-        elif "fpass" not in outputs and "label" not in outputs:
-            fpass_indices = nh.get_io_idxs(outputs)
-            label_indices = nh.get_io_idxs(outputs)
-        else:
-            raise ValueError("Both fpass and label outputs must be defined or neither.")
+        pd_idxs = nh.get_io_idxs(prediction)
+        dp_idxs = nh.get_io_idxs(deployment)
 
-        # Check for history sequences and set nhy accordingly
-        nhy: int = 0
+        # Check for history sequences and set Nhy accordingly
+        Nhy: int = 0
         for input in inputs.values():
             seq_cand = input[0]
             if isinstance(seq_cand, list) and all(isinstance(x, int) for x in seq_cand):
-                nhy = max(seq_cand[-1]+1, nhy)
-        self.nhy = nhy
+                Nhy_cand = seq_cand[-1]+1
+                Nhy = max(Nhy_cand, Nhy)
 
         # Define required attributes that all subclasses must implement
-        self.input_indices = input_indices
-        self.fpass_indices = fpass_indices
-        self.label_indices = label_indices
+        self.in_idxs = in_idxs
+        self.pd_idxs = pd_idxs
+        self.dp_idxs = dp_idxs
         self.network_type = network_type
-        self.nhy = nhy
+        self.Nhy = Nhy
         self.use_fpass = True
         
         # Initialize child specific attributes
@@ -68,11 +62,11 @@ class BaseNet(nn.Module, ABC):
         Get the output size of the network.
         """
 
-        Dim_x = nh.get_io_dims(self.input_indices)
-        Dim_fp = nh.get_io_dims(self.fpass_indices)
-        Dim_lb = nh.get_io_dims(self.label_indices)
+        in_dims = nh.get_io_dims(self.in_idxs)
+        pd_dims = nh.get_io_dims(self.pd_idxs)
+        dp_dims = nh.get_io_dims(self.dp_idxs)
         
-        return Dim_x,Dim_fp,Dim_lb
+        return in_dims,pd_dims,dp_dims
     
     def get_io_sizes(self,expanded:bool=False) -> int:
         """
@@ -88,15 +82,15 @@ class BaseNet(nn.Module, ABC):
             Ny_lb:      Label output size.
         """
 
-        Nx = nh.get_io_size(self.input_indices,expanded)
-        Ny_fp = nh.get_io_size(self.fpass_indices,expanded)
-        Ny_lb = nh.get_io_size(self.label_indices,expanded)
+        in_sizes = nh.get_io_size(self.in_idxs,expanded)
+        pd_sizes = nh.get_io_size(self.pd_idxs,expanded)
+        dp_sizes = nh.get_io_size(self.dp_idxs,expanded)
         
-        return Nx,Ny_fp,Ny_lb
+        return in_sizes,pd_sizes,dp_sizes
     
     @abstractmethod
-    def forward(self, x) -> torch.Tensor:
+    def forward(self, x) -> tuple[torch.Tensor,dict[str,torch.Tensor]]:
         """
         Subclasses must implement a forward pass.
         """
-        return None
+        return None,None

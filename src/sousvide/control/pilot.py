@@ -5,6 +5,7 @@ import os
 import json
 import numpy.typing as npt
 import albumentations as A
+import figs.utilities.config_helper as ch
 
 from typing import Literal
 from figs.control.base_controller import BaseController
@@ -25,26 +26,6 @@ class Pilot(BaseController):
             Nu:             Number of control variables.
         
         Variables:
-            name:           Name of the pilot.
-            hz:             Frequency of the pilot.
-
-            path:           Path to the pilot.
-            device:         Device to use.
-            policy:         Nerual network policy.
-
-            process_image:  Image processing function.
-            txupr:          Previous time/state.
-            zcr:            Current feature vector.
-
-            txcr:           Current state.
-            Obj:            Objective.
-            Img:            Image.
-
-            hy_idx:         History index.
-            tXU:            Time/State/Input history.
-            Znn:            Feature vector history.
-
-            da_cfg:         Data augmentation configuration.
         """
 
         ## Initial Variables ===============================================================================================
@@ -57,25 +38,21 @@ class Pilot(BaseController):
                 ToTensorV2()
                 ])            
         process_image = lambda x: transform(image=x)["image"]               # Image processing
-        obj_dim = [1,18]                                                    # Objective dimensions
         img_dim = [1,3,224,224]                                               # Image dimensions
         
-        # Some useful paths
+        # Generate pilot path
         workspace_path  = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        config_path = os.path.join(
-            workspace_path,"configs","pilots",pilot_name+".json")
         pilot_path = os.path.join(
             workspace_path,"cohorts",cohort_name,'roster',pilot_name)
 
-        # Load pilot config
-        with open(config_path) as json_file:
-            profile = json.load(json_file)
-        
-        # Check if pilot folder exists, if not create one
+        # Create the pilot path if it does not exist        
         if not os.path.exists(pilot_path):
             os.makedirs(pilot_path)
 
+        # Load the pilot configuration
+        profile = ch.get_config(pilot_name,"pilots")
+        
         # Torch intermediate variables
         use_cuda = torch.cuda.is_available()                                    # Check if cuda is available
 
@@ -89,21 +66,17 @@ class Pilot(BaseController):
         self.device = torch.device("cuda:0" if use_cuda else "cpu")
         self.policy = Policy(profile,pilot_name,pilot_path).to(self.device)
 
-        nhy = self.policy.nhy
-        zcr,Znn = self.generate_feature_variables(nhy)
-
         # ---------------------------------------------------------------------
         # Pilot Observe Variables
         # ---------------------------------------------------------------------
         
         # Function Variables
         self.process_image = process_image                      # Image Processing Function
-        self.txupr = torch.zeros(1,Ntx+Nu).to(self.device)      # Previous State
+        self.txupr = torch.zeros(1,Ntx+Nu).to(self.device)      # Previous Time,State and Input
         self.zcr = zcr                                          # Current Feature Vector
 
         # Network Input Variables
         self.txcr = torch.zeros((1,Ntx)).to(self.device)       # Current State
-        self.Obj = torch.zeros(obj_dim).to(self.device)         # Objective
         self.Img = torch.zeros(img_dim).to(self.device)         # Image
 
         # ---------------------------------------------------------------------
@@ -378,16 +351,11 @@ class Pilot(BaseController):
 
         return unn,znn,Xnn,tsol
     
-    def control(self,
-                tcr:float,xcr:np.ndarray,
-                upr:np.ndarray,
-                obj:np.ndarray,
-                icr:npt.NDArray[np.uint8]|None,zcr:dict[str,torch.Tensor]) -> tuple[
-                    np.ndarray,
-                    dict[str,torch.Tensor],
-                    np.ndarray]:
+    def control(
+        self,Xcr:dict[str,np.ndarray]
+    ) -> tuple[np.ndarray,dict[str,torch.Tensor],np.ndarray]:
         """
-        Name mask for the OODA control loop. Variable position swap to match generic controllers.
+        Name mask for the OODA control loop.
         
         Args:
             tcr:    Current flight time.
@@ -401,6 +369,6 @@ class Pilot(BaseController):
             unn:    Control input.
             tsol:   Time taken to solve components of the OODA loop in list form.
         """
-        unn,znn,_,tsol = self.OODA(upr,tcr,xcr,obj,icr,zcr)
+        unn,znn,_,tsol = self.OODA(Xcr)
         
         return unn,znn,tsol

@@ -13,6 +13,7 @@ import torch
 from sklearn.decomposition import PCA
 from albumentations.pytorch import ToTensorV2
 from sousvide.control.pilot import Pilot
+from scipy.ndimage import zoom
 
 transform = A.Compose([                                             # Image transformation pipeline
         A.Resize(256, 256),
@@ -103,6 +104,74 @@ def similarity_overlay(idxs:torch.Tensor,image:np.ndarray,
 
     return overlay
 
+def pca_overlay(pca:np.ndarray,threshold:float=0.5):
+    
+    # Check if images are float or uint8
+    if pca.dtype == np.uint8:
+        pca = pca.astype(np.float32) / 255.0
+
+    # Compute the RGB channels
+    pc1 = pca[:, :, 0]
+    pc2 = pca[:, :, 1]
+    pc3 = pca[:, :, 2]
+
+    foreground_mask = pc1 < threshold
+
+    r = (pc1-pc1.min()) / (pc1.max()-pc1.min())
+    g = (pc2-pc2.min()) / (pc2.max()-pc2.min())
+    b = (pc3-pc3.min()) / (pc3.max()-pc3.min())
+
+    # Combine the channels
+    image = np.zeros((pca.shape[0], pca.shape[1], 3), dtype=np.uint8)
+
+    image[:,:,0] = (r * 255).astype(np.uint8)
+    image[:,:,1] = (g * 255).astype(np.uint8)
+    image[:,:,2] = (b * 255).astype(np.uint8)
+
+    image[foreground_mask] = (0, 0, 0)  # Set foreground to black
+    return image
+
+def heatmap_overlay(heatmap:np.ndarray,image:np.ndarray,
+                    colormap='plasma', alpha=0.5,threshold:float|None=None):
+    
+    # Check if images are float or uint8
+    if heatmap.dtype == np.uint8:
+        heatmap = heatmap.astype(np.float32) / 255.0
+    elif heatmap.dtype == torch.float32:
+        heatmap = heatmap.cpu().numpy()
+
+    if image.dtype == np.uint8:
+        image = image.astype(np.float32) / 255.0
+    elif image.dtype == torch.float32:
+        image = image.cpu().numpy()
+
+    # Normalize the heatmap
+    heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap))
+    heatmap = np.clip(heatmap, 0, 1)
+
+    # Apply threshold if provided
+    if threshold is not None:
+        heatmap[heatmap < threshold] = 0
+        
+    # Get the scale factors
+    H,W = image.shape[:2]
+    h,w, = heatmap.shape
+    zoom_y = H / h
+    zoom_x = W / w
+
+    # Resize heatmap to match image size
+    heatmap_upsampled = zoom(heatmap, (zoom_y, zoom_x), order=0)
+
+    # Apply colormap
+    cmap = plt.get_cmap(colormap)
+    heatmap_colored = cmap(heatmap_upsampled)[:, :, :3]
+
+    # Blend with original image
+    overlay = alpha*image + (1 - alpha)*heatmap_colored
+    overlay = (overlay * 255).astype(np.uint8)
+
+    return overlay
+
 def extract_rollout_data(cohort:str,course:str):
     workspace = os.path.join("../cohorts",cohort,"rollout_data",course)
 
@@ -125,6 +194,6 @@ def extract_rollout_data(cohort:str,course:str):
     imgs = torch.load(imgs_file[0])[0]
 
     Tro,Xro,Uro = traj["Tro"],traj["Xro"],traj["Uro"]
-    Iro = imgs["images"]
+    Iro = imgs["rgb"]
 
     return Tro,Xro,Uro,Iro

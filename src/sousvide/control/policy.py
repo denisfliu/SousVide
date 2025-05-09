@@ -19,11 +19,11 @@ class Policy(nn.Module):
             
         Variables:
             network_type:   Type of network.
-            fpass_indices:  Indices of the forward-pass output.
-            label_indices:  Indices of the label output.
+            pd_idxs:        Indices of the prediction output.
+            dp_idxs:        Indices of the deployment output.
             networks:       Network layers.
-            use_fpass:      Flag to use forward-pass.
-            nhy:            Maximum sequence length.
+            use_deploy:     Flag to use forward-pass.
+            Nhy:            Maximum sequence length.
         """
         
         # Initial Parent Call
@@ -33,7 +33,7 @@ class Policy(nn.Module):
         networks:dict[str,BaseNet] = nn.ModuleDict()
         nhy = 1
         for name,config in policy_config["networks"].items():
-            networks[name],nhy_net = nf.generate_network(config,name,policy_path)   
+            networks[name] = nf.generate_network(config,name,policy_path)   
 
             # Update the max sequence length variable
             if nhy_net is not None:

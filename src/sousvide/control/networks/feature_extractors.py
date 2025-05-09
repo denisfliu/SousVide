@@ -24,22 +24,26 @@ class VitB16(nn.Module):
         x = self.vit.encoder(x)
 
         # Extract the patches
-        x = x[:, 1:, :]
+        ynn = x[:, 1:, :]
+        cls = x[:, 0, :]
 
-        return x
+        ynn = ynn.squeeze(0)
+        cls = cls.squeeze(0)
+
+        return ynn,cls
     
 class DINOv2(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-        self.dpt = torch.load("../pretrained_models/dinov2_vitb14_nyu_dpt_head.pth")
-
         # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-        # self.dpt = torch.load("../pretrained_models/dinov2_vits14_nyu_dpt_head.pth")
-        print(self.dpt)
+        self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
 
-    def forward(self, x):
-        x = self.vit.get_intermediate_layers(x,12)[-1]
+    def forward(self, xnn) -> tuple[torch.Tensor,torch.Tensor]:
+        ynn,cls = self.vit.get_intermediate_layers(xnn,n=1, reshape=False,return_class_token=True)[0]
+        
+        ynn = ynn.squeeze(0)
+        cls = cls.squeeze(0)
 
-        return x
+        return ynn,cls

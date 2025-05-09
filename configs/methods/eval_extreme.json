@@ -15,8 +15,6 @@
     },
     "rollout": {
         "frequency": 100,
-        "delay": 0.0,
-        "external_forces": null,
         "noise": {
             "model": {
                 "mean": [
@@ -42,7 +40,6 @@
                     3.0e-2, 3.0e-2, 3.0e-2, 3.0e-2
                 ]
             }
-        },
-        "fusion": null
+        }
     }
 }

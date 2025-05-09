@@ -62,8 +62,5 @@ def generate_network(
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")
     
-    # Check if network has feature,sequence requirments
-    nhy = network.nhy
-    
-    return network,nhy
+    return network
     

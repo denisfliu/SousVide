@@ -16,11 +16,11 @@
                 ]
             },
             "outputs": {
-                "fpass": {
-                    "histLat": [ 8 ]
-                },
-                "label": {
+                "prediction": {
                     "parameters": [ ["m", "kt"] ]
+                },
+                "deployment": {
+                    "histLat": [ 8 ]
                 }
             },
             "layers": {
@@ -49,7 +49,12 @@
                 ],
                 "histLat": [ 8 ]
             },
-            "outputs": {
+            "prediction": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "deployment": {
                 "command": [
                     ["nf", "wx", "wy", "wz"]
                 ]

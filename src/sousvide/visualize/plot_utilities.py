@@ -12,15 +12,15 @@ def get_plot_limits(XX:List[np.ndarray],
     Get the plot limits for the trajectory.
     """
 
-    x_dim = XX[0].shape[0]
+    x_dim = XX[0].shape[-1]
     if lim_min == True:
         x_max,x_min = np.ones(x_dim),-np.ones(x_dim)
     else:
         x_max,x_min = np.zeros(x_dim),np.zeros(x_dim)
 
     for X in XX:
-        xi_min = np.min(X,axis=1)
-        xi_max = np.max(X,axis=1)
+        xi_min = np.min(X,axis=0)
+        xi_max = np.max(X,axis=0)
 
         x_min = np.minimum(x_min,xi_min)
         x_max = np.maximum(x_max,xi_max)

@@ -97,16 +97,16 @@ def generate_perturbations(Tsps:np.ndarray,
     for i in range(Nsps):
         # Sample random start time and get corresponding state vector sample
         t0 = Tsps[i]
-        idx = np.where(tXUd[0,:] <= t0)[0][-1]
-        x0s = tXUd[1:11,idx]
+        idx = np.where(tXUd[:,0] <= t0)[0][-1]
+        x0s = tXUd[idx,1:11]
         
         # Perturb state vector sample
         w0 = np.random.uniform(-w_x0,w_x0)
         x0 = x0s + w0
         
         # Ensure quaternion is well-behaved (magnitude and closest to previous)
-        idxr = np.where(tXUd[0,:] <= t0)[0][-1]
-        x0[6:10] = oh.obedient_quaternion(x0[6:10],tXUd[7:11,idxr])
+        idxr = np.where(tXUd[:,0] <= t0)[0][-1]
+        x0[6:10] = oh.obedient_quaternion(x0[6:10],tXUd[idxr,7:11])
 
         # Store perturbation in list
         perturbation = {"t0":t0,"x0":x0}
