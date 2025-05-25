@@ -21,8 +21,12 @@ transform = A.Compose([                                             # Image tran
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2()
         ])            
-process_image = lambda x: transform(image=x)["image"]
 
+def process_image(image:np.ndarray) -> torch.Tensor:
+    image = transform(image=image)["image"]
+    image = image.unsqueeze(0)  # Add batch dimension
+
+    return image
 
 def compute_similarity(target:torch.Tensor, patches:torch.Tensor):
 
@@ -172,7 +176,7 @@ def heatmap_overlay(heatmap:np.ndarray,image:np.ndarray,
 
     return overlay
 
-def extract_rollout_data(cohort:str,course:str):
+def extract_rollout_data(cohort:str,course:str) -> tuple[np.ndarray,np.ndarray,np.ndarray,np.ndarray]:
     workspace = os.path.join("../cohorts",cohort,"rollout_data",course)
 
     # Load the Rollout Data

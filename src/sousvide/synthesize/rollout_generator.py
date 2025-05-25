@@ -78,6 +78,11 @@ def generate_rollout_data(cohort_name:str,course_names:list[str],
             Tsd,FOd = mts.get_desired_trajectory()
             tXUd = th.TsFO_to_tXU(Tsd,FOd,m_bs,kt_bs,fex)
 
+            # Print Desired Time Steps
+            Tp = np.hstack([0.0,np.cumsum(mts.dTd)])
+            ru.console.print(
+                f"[bold bright_green] {course_name} - Ideal Time Steps: {np.around(Tp,3)}[/]")
+            
             # Update simulation variables
             simulator.update_forces(course["forces"])
             controller = VehicleRateMPC(expert,course)
@@ -205,7 +210,7 @@ def generate_rollouts(
             trajectory = {
                 "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
                 "params":prms,"Fres":Fres,"FOro":FOro,
-                "tXUd":tXUd,"Ndata":Uro.shape[1],"Aux":Aux,
+                "tXUd":tXUd,"Ndata":Uro.shape[0],"Aux":Aux,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
 

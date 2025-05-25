@@ -5,6 +5,7 @@ from torchvision.models import (
     ViT_B_16_Weights,ConvNeXt_Tiny_Weights,EfficientNet_V2_S_Weights
 )
 import os
+from transformers import AutoProcessor, AutoModel
 
 class VitB16(nn.Module):
     def __init__(self):
@@ -37,13 +38,18 @@ class DINOv2(nn.Module):
         super().__init__()
 
         # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-        self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
         # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+        
+        model_name = "facebook/dinov2-base"  # Choose your desired DINO v2 variant
+        # processor = AutoProcessor.from_pretrained(model_name)
+        backbone = AutoModel.from_pretrained(model_name)
+        self.vit = backbone
 
     def forward(self, xnn) -> tuple[torch.Tensor,torch.Tensor]:
-        ynn,cls = self.vit.get_intermediate_layers(xnn,n=1, reshape=False,return_class_token=True)[0]
-        
-        ynn = ynn.squeeze(0)
-        cls = cls.squeeze(0)
+        outputs = self.vit(xnn)
+
+        ynn = outputs.last_hidden_state[:,1:,:]
+        cls = outputs.last_hidden_state[:,0,:]
 
         return ynn,cls
