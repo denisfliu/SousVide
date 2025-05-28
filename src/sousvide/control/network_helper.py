@@ -49,46 +49,42 @@ def get_io_refr(io_type:Literal["basic","sequence","image"]) -> dict[str, list[l
 
     return io_refr
 
-def get_io_dims(io_idxs:dict[str,list[slice|torch.Tensor]]) -> int:
+def get_io_dims(io_idxs:dict[str,list[slice|torch.Tensor]]) -> dict[str,list[int]]:
     """
     Get the dimensions of the input/output.
 
     Args:
-        idxs_dict:  Dictionary of indices of the input/output.
+        io_idxs:  Dictionary of indices of the input/output.
 
     Returns:
         io_dims:   Dimensions of the input/output tensors.
     """
 
-    io_dims = []
-    for idxs_list in io_idxs.values():
-        io_dim = [len(sublist) for sublist in idxs_list]
-        io_dims.append(io_dim)
+    io_dims = {}
+    for io_name,io_idxs in io_idxs.items():
+        io_dim = [len(sublist) for sublist in io_idxs]
+        io_dims[io_name] = io_dim
 
     return io_dims
 
-def get_io_size(io_idxs:dict[str,list[slice|torch.Tensor]],
-                expanded:bool=False) -> int:
+def get_io_sizes(io_idxs:dict[str,list[slice|torch.Tensor]]) -> dict[str,list[int]]:
     """
     Get the total size of the input/output.
 
     Args:
-        idxs_dict:  Dictionary of indices of the input/output.
+        io_idxs:  Dictionary of indices of the input/output.
 
     Returns:
-        io_size:   Sizes of the input/output tensors.
+        io_sizes:   Sizes of the input/output tensors.
     """
-
+    # Get the input/output dimensions
     io_dims = get_io_dims(io_idxs)
-    io_size = []
-    for io_dim in io_dims:
-        io_size.append(math.prod(io_dim))
 
-    if expanded:
-        return io_size
-    else:
-        return sum(io_size)
+    io_sizes = {}
+    for io_name,io_dim in io_dims.items():
+        io_sizes[io_name] = math.prod(io_dim)
 
+    return io_sizes
 
 def get_io_idxs(io_cfgs: dict[str, list[list[int|str]]]) -> dict[str,list[slice|torch.Tensor]] :
     """
@@ -165,50 +161,38 @@ def extract_io(io_srcs:dict[str,torch.Tensor],
     Args:
         io_dict:    Input/Output dictionary tensor.
         io_idxs:    Dictionary of indices of the inputs/outputs.
-        use_tensor: If True, return a tensor of the inputs/outputs. If False, return a list.
-        flatten:    If True, flatten the non-batch dimensions of the inputs/outputs.
 
     Returns:
-        xnn:        List/tensor of extracted inputs.
+        xnn:        Dictionary of extracted inputs.
     """
 
-    if io_idxs is None:
-        # Return all if no indices are provided
-        xnn = list(io_srcs.values())
-    else:
-        xnn = []
-        for name,idxs in io_idxs.items():
-            # Remove last letter of the name if it is a number
-            if name[-1].isdigit():
-                name = name[:-1]
+    xnn = {}
+    for name,idxs in io_idxs.items():
+        # Remove last letter of the name if it is a number
+        if name[-1].isdigit():
+            name_dt = name[:-1]
+        else:
+            name_dt = name
 
-            # Extract the input/output tensor
-            data = io_srcs[name]
-            for dim, idx in enumerate(idxs):
-                if isinstance(idx,torch.Tensor):
-                    idxs = idx
-                else:
-                    raise ValueError(f"Invalid type in index_list[{dim}]: {type(idx)}. Must be slice or list.")
+        # Extract the input/output tensor
+        data = io_srcs[name_dt]
+        for dim, idx in enumerate(idxs):
+            if isinstance(idx,torch.Tensor):
+                idxs = idx
+            else:
+                raise ValueError(f"Invalid type in index_list[{dim}]: {type(idx)}. Must be slice or list.")
 
-                # Move indices to the same device as the input/output tensor
-                idxs = idxs.to(data.device)
+            # Move indices to the same device as the input/output tensor
+            idxs = idxs.to(data.device)
 
-                # Apply index selection along the current dimension
-                data = torch.index_select(data, dim+1, idxs)
+            # Apply index selection along the current dimension
+            data = torch.index_select(data, dim+1, idxs)
 
-            xnn.append(data.view(data.size(0), -1))
-
-    # Convert to tensor if requested
-    if use_tensor:
-        xnn = torch.cat(xnn, dim=1)
-
-    # Flatten the non-batch dimensions if requested
-    if flatten:
-        xnn = torch.flatten(xnn, start_dim=1)
+        xnn[name] = data
 
     return xnn
 
-def generate_positional_encoding( d_model, max_seq_len=100):
+def generate_positional_encoding(d_model, max_seq_len=100):
     """
     Generate positional encoding.
 

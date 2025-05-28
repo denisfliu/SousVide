@@ -10,8 +10,7 @@ class BaseNet(nn.Module, ABC):
 
     Args:
         inputs:         Inputs config.
-        prediction:     Prediction config.
-        deployment:     Deployment config.
+        outputs:        Outputs config.
         network_type:   Type of network.
 
     Variables:
@@ -29,46 +28,62 @@ class BaseNet(nn.Module, ABC):
                  inputs: dict[str, dict[str,list[int|list[int|str]]]],
                  outputs: dict[str, dict[str,list[int|list[int|str]]]],
                  network_type: str ):
+        # Initial Parent Call
         super().__init__()
 
+        # Check if prediction and deployment are provided
+        if not ("prediction" in inputs and "deployment" in inputs):
+            inputs = {"prediction": inputs,"deployment": inputs}
+
+        if not ("prediction" in outputs and "deployment" in outputs):
+            outputs = {"prediction": outputs,"deployment": outputs}
+
         # Some useful intermediate variables
-        xpd_idxs = nh.get_io_idxs(inputs)
-        ypd_idxs
-
-        pd_idxs = nh.get_io_idxs(prediction)
-        dp_idxs = nh.get_io_idxs(deployment)
-
+        xpd_idxs,ypd_idxs = nh.get_io_idxs(inputs["prediction"]),nh.get_io_idxs(outputs["prediction"])
+        xdp_idxs,ydp_idxs = nh.get_io_idxs(inputs["deployment"]),nh.get_io_idxs(outputs["deployment"])
+        
         # Check for history sequences and set Nhy accordingly
         Nhy: int = 0
         for input in inputs.values():
-            seq_cand = input[0]
-            if isinstance(seq_cand, list) and all(isinstance(x, int) for x in seq_cand):
-                Nhy_cand = seq_cand[-1]+1
-                Nhy = max(Nhy_cand, Nhy)
+            for input_item in input.values():
+                seq_cand = input_item[0]
+                if isinstance(seq_cand, list) and all(isinstance(x, int) for x in seq_cand):
+                    Nhy_cand = seq_cand[-1]+1
+                    Nhy = max(Nhy_cand, Nhy)
 
         # Define required attributes that all subclasses must implement
-        self.in_idxs = in_idxs
-        self.pd_idxs = pd_idxs
-        self.dp_idxs = dp_idxs
         self.network_type = network_type
+        self.io_idxs = {
+            "xpd": xpd_idxs, "ypd": ypd_idxs,
+            "xdp": xdp_idxs, "ydp": ydp_idxs
+        }
         self.Nhy = Nhy
-        self.use_fpass = True
-        
+        self.use_deploy = True
+
         # Initialize child specific attributes
         self.networks:nn.ModuleDict =  nn.ModuleDict()
 
     def get_io_dims(self) -> int:
         """
         Get the output size of the network.
+
+        Returns:
+            io_dims:    Dictionary of input/output dimensions.
         """
 
-        in_dims = nh.get_io_dims(self.in_idxs)
-        pd_dims = nh.get_io_dims(self.pd_idxs)
-        dp_dims = nh.get_io_dims(self.dp_idxs)
-        
-        return in_dims,pd_dims,dp_dims
+        xpd_dims = nh.get_io_dims(self.io_idxs["xpd"])
+        ypd_dims = nh.get_io_dims(self.io_idxs["ypd"])
+        xdp_dims = nh.get_io_dims(self.io_idxs["xdp"])
+        ydp_dims = nh.get_io_dims(self.io_idxs["ydp"])
+
+        io_dims = {
+            "xpd": xpd_dims,"ypd": ypd_dims,
+            "xdp": xdp_dims,"ydp": ydp_dims}
+
+        return io_dims
     
-    def get_io_sizes(self,expanded:bool=False) -> int:
+
+    def get_io_sizes(self) -> dict[str,dict[str,int]]:
         """
         Get the output size of the network.
 
@@ -77,20 +92,23 @@ class BaseNet(nn.Module, ABC):
                         If False, return the size of the network.
 
         Returns:
-            Nx:         Input size.
-            Ny_fp:      Forward-pass output size.
-            Ny_lb:      Label output size.
+            io_sizes:    Dictionary of input/output sizes.
         """
 
-        in_sizes = nh.get_io_size(self.in_idxs,expanded)
-        pd_sizes = nh.get_io_size(self.pd_idxs,expanded)
-        dp_sizes = nh.get_io_size(self.dp_idxs,expanded)
-        
-        return in_sizes,pd_sizes,dp_sizes
+        xpd_sizes = nh.get_io_sizes(self.io_idxs["xpd"])
+        ypd_sizes = nh.get_io_sizes(self.io_idxs["ypd"])
+        xdp_sizes = nh.get_io_sizes(self.io_idxs["xdp"])
+        ydp_sizes = nh.get_io_sizes(self.io_idxs["ydp"])
+
+        io_sizes = {
+            "xpd": xpd_sizes,"ypd": ypd_sizes,
+            "xdp": xdp_sizes,"ydp": ydp_sizes}
+
+        return io_sizes
     
     @abstractmethod
-    def forward(self, x) -> tuple[torch.Tensor,dict[str,torch.Tensor]]:
+    def forward(self, x) -> dict[str, torch.Tensor]:
         """
         Subclasses must implement a forward pass.
         """
-        return None,None
+        return None

@@ -4,7 +4,7 @@
         "histNet": {
             "network_type": "sifu",
             "inputs": {
-                "history": [
+                "dynamics": [
                     [ 0, 1, 2, 3, 4],
                     [
                         "dt",
@@ -20,7 +20,7 @@
                     "parameters": [ ["m", "kt"] ]
                 },
                 "deployment": {
-                    "histLat": [ 8 ]
+                    "feature_vector": [ 8 ]
                 }
             },
             "layers": {
@@ -47,14 +47,9 @@
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ 8 ]
+                "feature_vector": [ 8 ]
             },
-            "prediction": {
-                "command": [
-                    ["nf", "wx", "wy", "wz"]
-                ]
-            },
-            "deployment": {
+            "outputs": {
                 "command": [
                     ["nf", "wx", "wy", "wz"]
                 ]

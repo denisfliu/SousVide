@@ -8,16 +8,14 @@ def compute_flight_metrics(Trajectories:List[dict],pp_threshold:float=0.3) -> No
     TTE,TTE_best = [],np.inf
     for trajectory in Trajectories:
         # Extract trajectory data
-        Pro:np.ndarray = trajectory["Xro"][0:3,:]
-        Pds:np.ndarray = trajectory["tXUd"][1:4,:]
+        Pro:np.ndarray = trajectory["Xro"][:,0:3]
+        Pds:np.ndarray = trajectory["tXUd"][:,1:4]
         Ndata = trajectory["Ndata"]
 
-        # Initialize the TTE for this trajectory
-        tte = np.zeros(Ndata)
-
         # Compute the tte for each data point
+        tte = np.zeros(Ndata)
         for i in range(Ndata):
-            tte[i] = np.min(np.linalg.norm(Pro[:,i].reshape(-1, 1) - Pds, axis=0)) 
+            tte[i] = np.min(np.linalg.norm(Pro[i,:].reshape(1,-1) - Pds, axis=0)) 
         TTE.append(tte)
 
         # Update the best tte if this trajectory has a better one
@@ -34,7 +32,7 @@ def compute_flight_metrics(Trajectories:List[dict],pp_threshold:float=0.3) -> No
     
     # Inference Time
     T_inf = []
-    for idx,trajectory in enumerate(Trajectories):
+    for trajectory in Trajectories:
         t_inf = np.sum(trajectory["Tsol"], axis=0)
         T_inf.append(t_inf)
 

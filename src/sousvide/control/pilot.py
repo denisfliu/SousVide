@@ -14,7 +14,7 @@ from sousvide.control.policy import Policy
 
 class Pilot(BaseController):
     def __init__(self,cohort_name:str,pilot_name:str,
-                 hz:int=20,Ntx:int=11,Nu:int=4):
+                 hz:int=20,Ntxu:int=15,Nft:int=6):
         """
         Initializes a pilot object. 
         
@@ -22,95 +22,103 @@ class Pilot(BaseController):
             cohort_name:    Name of the cohort.
             pilot_name:     Name of the pilot.
             hz:             Frequency of the pilot.
-            Ntx:            Number of time/state variables.
-            Nu:             Number of control variables.
+            Ntxu:           Number of time/state/input variables.
+            Nft:            Number of force/torque variables.
         
         Variables:
+            path:           Path to the pilot's directory.
+            device:         Device to run the pilot on (CPU or GPU).
+            policy:         Policy object for the pilot.
+            process_image:  Function to process the image.
+            txu_cr:         Current time, state and input variables.
+            rgb_cr:         Current RGB image.
+            fts_cr:         Current force/torque sensor data.
+            pch_cr:         Current feature map.
+            sqc_idx:        Current index in the sequence.
+            Nsqc:           Number of history blocks.
+            Sqc:            Sequence arrays containing EKF, CoinFT and feature map data.
+            txu_pr:         Previous time, state and input variables.
+            fts_pr:         Previous force/torque sensor data.
+            pch_pr:         Previous feature map.
+            da_cfg:         Data augmentation configuration.
+            name:           Name of the pilot.
+            hz:             Frequency of the pilot.
         """
+        
+        ## Initialization =================================================================================================
+        
+        # Initialize paths
+        workspace_path  = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        pilot_path = os.path.join(
+            workspace_path,"cohorts",cohort_name,'roster',pilot_name)
+        
+        if not os.path.exists(pilot_path):
+            os.makedirs(pilot_path, exist_ok=True)
+            
+        # Initialize pytorch variables
+        profile = ch.get_config(pilot_name,"pilots")
+        
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        policy = Policy(profile,pilot_name,pilot_path).to(device)
 
-        ## Initial Variables ===============================================================================================
+        # Initialize sequence variables
+        Nsqc = policy.Nhy
+        Sqc = {
+            "ekf": torch.zeros((1,Nsqc,Ntxu)).to(device),          # EKF data (dt, p, v, q, u)
+            "cft": torch.zeros((1,Nsqc,Nft)).to(device),           # CoinFT data
+            "map": torch.zeros((1,Nsqc,16,16,768)).to(device)      # Feature map data
+        }
 
-        # Some useful constants
-        transform = A.Compose([                                             # Image transformation pipeline
+        # Initialize image processing variables
+        transform = A.Compose([
                 A.Resize(256, 256),
                 A.CenterCrop(224, 224),
                 A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
                 ToTensorV2()
                 ])            
-        process_image = lambda x: transform(image=x)["image"]               # Image processing
-        img_dim = [1,3,224,224]                                               # Image dimensions
-        
-        # Generate pilot path
-        workspace_path  = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        pilot_path = os.path.join(
-            workspace_path,"cohorts",cohort_name,'roster',pilot_name)
-
-        # Create the pilot path if it does not exist        
-        if not os.path.exists(pilot_path):
-            os.makedirs(pilot_path)
-
-        # Load the pilot configuration
-        profile = ch.get_config(pilot_name,"pilots")
-        
-        # Torch intermediate variables
-        use_cuda = torch.cuda.is_available()                                    # Check if cuda is available
+        process_image = lambda x: transform(image=x)["image"]
+        img_dim = [1,3,224,224]
 
         ## Class Variables =================================================================================================
         
-        # ---------------------------------------------------------------------
-        # Pilot Neural Network Policy Variables
-        # ---------------------------------------------------------------------
-
+        # Path Variables
         self.path = pilot_path
-        self.device = torch.device("cuda:0" if use_cuda else "cpu")
-        self.policy = Policy(profile,pilot_name,pilot_path).to(self.device)
 
-        # ---------------------------------------------------------------------
-        # Pilot Observe Variables
-        # ---------------------------------------------------------------------
-        
-        # Function Variables
-        self.process_image = process_image                      # Image Processing Function
-        self.txupr = torch.zeros(1,Ntx+Nu).to(self.device)      # Previous Time,State and Input
-        self.zcr = zcr                                          # Current Feature Vector
+        # Neural Network Variables
+        self.device = device
+        self.policy = policy
 
-        # Network Input Variables
-        self.txcr = torch.zeros((1,Ntx)).to(self.device)       # Current State
-        self.Img = torch.zeros(img_dim).to(self.device)         # Image
+        # Image Processing Variables
+        self.process_image = process_image
 
-        # ---------------------------------------------------------------------
-        # Pilot Orient Variables
-        # ---------------------------------------------------------------------
+        # Policy Input Variables
+        self.txu_cr = torch.zeros((1,Ntxu)).to(device)         # Current Time,State and Input
+        self.rgb_cr = torch.zeros(img_dim).to(device)          # Current Image
+        self.fts_cr = torch.zeros((1,6)).to(device)            # Current Force/Torque sensor data
 
-        # Function Variables
-        self.hy_idx = 0
+        # Feature Map Variables
+        self.pch_cr = torch.zeros((1,16,16,768)).to(device)    # Current Feature Map
 
-        # Network Input Variables
-        self.Dnn = torch.zeros((1,nhy,18)).to(self.device)              # time step/State/Input History
-        self.Znn = Znn
-        
-        # ---------------------------------------------------------------------
-        # Pilot Training Variables
-        # ---------------------------------------------------------------------
-                
+        # Sequence Variables
+        self.sqc_idx = 0                                        # Current index in the sequence
+        self.Nsqc = Nsqc                                        # Number of history blocks  
+        self.Sqc = Sqc                                          # Sequence arrays
+
+        self.txu_pr = torch.zeros((1,Ntxu)).to(device)         # Previous Time,State and Input
+        self.fts_pr = torch.zeros((1,6)).to(device)            # Previous Force/Torque sensor data
+        self.pch_pr = torch.zeros((1,16,16,768)).to(device)    # Previous Feature Map
+
         # Data Augmentation
         self.da_cfg = {
             "type": profile["data_augmentation"]["type"],
             "mean": profile["data_augmentation"]["mean"],
             "std": profile["data_augmentation"]["std"]
         }
-        
-        # ---------------------------------------------------------------------
-        # Pilot Identifier Variables
-        # ---------------------------------------------------------------------
 
         # Necessary Variables for Base Controller -----------------------------
         self.name = pilot_name
         self.hz = hz
-        self.nhy = nhy
-
-        # ---------------------------------------------------------------------
 
     def set_mode(self,mode:Literal['train','deploy']):
         """
@@ -124,108 +132,108 @@ class Pilot(BaseController):
         """
 
         if mode == 'train':
-            self.policy.train()                              # Set model to training mode
+            self.policy.train()         # Set model to training mode
         elif mode == 'deploy':
-            self.policy.eval()                               # Set model to evaluation mode
+            self.policy.eval()          # Set model to evaluation mode
 
-            xnn = self.decide()                             # Create dummy information to initialize the model
-            self.act(xnn)                                   # Do a 'wipe out' to initialize the model
+            xnn = self.collate()        # Create dummy information to initialize the model
+            self.act(xnn)               # Do a 'wipe out' to initialize the model
         else:
             raise ValueError("Invalid mode. Must be 'train' or 'deploy'.")
-    
-    def generate_feature_variables(self,nhy:int) -> tuple[dict[str,torch.Tensor],dict[str,torch.Tensor]]:
-        """
-        Function that generates znn and Znn variables for the neural network model.
-        """
 
-        znn,Znn = {},{}
-        for key,network in self.policy.networks.items():
-            _,fp_size,_ = network.get_io_sizes()
-
-            znn[key] = torch.zeros((1,fp_size))
-            Znn[key] = torch.zeros((1,nhy,fp_size))
-
-        return znn,Znn
-
-    def set_initial_memory(self,x0:np.ndarray,u0:np.ndarray|None=None) -> None:
+    def reset_memory(self,x0:np.ndarray,u0:np.ndarray=None,
+                     fts0:np.ndarray=None,pch0:torch.Tensor=None) -> None:
         """
         Function that sets the initial states of the pilot.
 
         Args:
             x0: Initial state.
             u0: Initial control input.
+            fts0: Initial force/torque sensor data.
+            pch0: Initial feature map.
 
         Returns:
             None
         """
 
-        # Educated guess for hover
+        # Fill u0,ft0 and pch0 if they are None
         if u0 is None:
-            u0 = np.array([-0.4,0.0,0.0,0.0])        
+            u0 = np.array([-0.4,0.0,0.0,0.0])
+
+        if fts0 is None:
+            fts0 = np.zeros(6)
+
+        if pch0 is None:
+            pch0 = torch.zeros((16,16,768)).to(self.device)
 
         # Convert Non-Torch Tensor Variables to Torch Tensors on GPU
         x0 = torch.from_numpy(x0).float().to(self.device).unsqueeze(0)
         u0 = torch.from_numpy(u0).float().to(self.device).unsqueeze(0)
+        fts0 = torch.from_numpy(fts0).float().to(self.device).unsqueeze(0)
+        pch0 = pch0.unsqueeze(0).to(self.device)  # Ensure pch0 is a 4D tensor
         
-        # Set the initial states
-        self.txupr[0,1:11] = self.txcr[0,1:11] = x0
-        self.txupr[0,11:15] = u0
+        # Set the initial sequence states
+        self.txu_pr[0,1:11] = self.txu_cr[0,1:11] = x0
+        self.txu_pr[0,11:15] = self.txu_cr[0,11:15] = u0
+        self.fts_pr = self.fts_cr = fts0
+        self.pch_pr = self.pch_cr = pch0
 
-        for i in range(self.Dnn.shape[1]):
-            self.Dnn[0,i,1:11] = x0
-            self.Dnn[0,i,11:15] = u0
+        for i in range(self.Sqc["ekf"].shape[1]):
+            self.Sqc["ekf"][0,i,0] = 0.0
+            self.Sqc["ekf"][0,i,1:11] = x0
+            self.Sqc["ekf"][0,i,11:15] = u0
 
-    def observe(self,
-                upr:np.ndarray|torch.Tensor,
-                tcr:float|torch.Tensor,xcr:np.ndarray|torch.Tensor,
-                obj:np.ndarray|torch.Tensor,
-                icr:npt.NDArray[np.uint8]|None|torch.Tensor,zcr:dict[str,torch.Tensor]) -> None:
+            self.Sqc["cft"][0,i,:] = fts0
+            self.Sqc["map"][0,i,:,:,:] = pch0
+
+    def observe(self,t_cr:float,x_cr:np.ndarray,u_pr:np.ndarray,
+                rgb_cr:np.ndarray|None,dpt_cr:None,
+                fts_cr:np.ndarray) -> None:
         """
-        Function that performs the observation step of the OODA loop where we take in all the relevant
-        flight data.
+        Function that intakes the observable data from the environment and updates the
+        pilot's internal variables.
 
         Args:
-            upr:    Previous control input.
-            tcr:    Current flight time.
-            xcr:    Current state in world frame (observed).
-            obj:    Objective vector.
-            icr:    Current image frame.
-            zcr:    Dictionary of current feature vectors.
+            t_cr:   Current flight time.
+            x_cr:   Current state in world frame (observed).
+            u_pr:   Previous control input.
+            rgb_cr: Current image frame.
+            dpt_cr: Current depth frame.
+            fts_cr: Current force/torque sensor data.
 
         Returns:
             None
         """
 
         # Convert Non-Torch Tensor Variables to Torch Tensors on GPU
-        upr = torch.tensor(upr,dtype=torch.float32).to(self.device).unsqueeze(0)
-        tcr = torch.tensor(tcr,dtype=torch.float32).to(self.device).reshape(1,1)
-        xcr = torch.from_numpy(xcr).float().to(self.device).unsqueeze(0)
-        obj = torch.from_numpy(obj).float().to(self.device).unsqueeze(0)
-
-        for value in zcr.values():
-            value = value.to(self.device).unsqueeze(0)
+        t_cr = torch.tensor(t_cr,dtype=torch.float32).to(self.device).reshape(1,1)
+        x_cr = torch.from_numpy(x_cr).float().to(self.device).unsqueeze(0)
+        u_pr = torch.tensor(u_pr,dtype=torch.float32).to(self.device).unsqueeze(0)
 
         # Process image if it is not downsampled
-        if icr is None or icr.shape != self.Img.shape:
-            icr = self.process_image(icr)
+        if rgb_cr is None or rgb_cr.shape != self.rgb_cr.shape:
+            rgb_cr = self.process_image(rgb_cr)
         else:
-            icr = torch.from_numpy(icr).float()
+            rgb_cr = torch.from_numpy(rgb_cr).float()
+        # Depth image is not used in the pilot, so we ignore it
+        _ = dpt_cr
 
-        # Update Function Variables
-        self.txupr.copy_(torch.cat((self.txcr,upr),dim=1))
-        self.txcr.copy_(torch.cat((tcr,xcr),dim=1))
+        # Convert force/torque sensor data to torch tensor
+        fts_cr = torch.from_numpy(fts_cr).float().to(self.device).unsqueeze(0)
 
-        for key,value in zcr.items():
-            self.zcr[key].copy_(value)
+        # Update previous variables
+        self.txu_pr[0,0:11],self.txu_pr[0,11:15] = self.txu_cr[0,0:11],u_pr
+        self.fts_pr[0,:] = self.fts_cr[0,:]
+        self.pch_pr[0,:,:,:] = self.pch_cr[0,:,:,:]
 
-        # Update Network Input Variables
-        self.Obj.copy_(obj)
-        self.Img.copy_(icr)
+        # Update current variables
+        self.txu_cr[0,0],self.txu_cr[0,1:11] = t_cr,x_cr        
+        self.rgb_cr[0,:,:,:] = rgb_cr
+        self.fts_cr = fts_cr
 
-    def orient(self):
+    def retain(self):
         """
-        Function that performs the orientation step of the OODA loop where we generate the history
-        variables from the flight data.
+        Function that retains observable data within the sequence variables.
 
         Args:
             None
@@ -234,101 +242,96 @@ class Pilot(BaseController):
             None
         """
 
-        # Update history data
-        dt0 = self.txcr[0,0]-self.txupr[0,0]
-        p0,q0 = self.txupr[0,1:4],self.txupr[0,7:11]
-        v0,v1 = self.txupr[0,4:7],self.txcr[0,4:7]
-        a0,u0 = (v1-v0)/(dt0+1e-9),self.txupr[0,11:15]
+        # Update sensor based sequence variables
+        dt = self.txu_cr[0,0]-self.txu_pr[0,0]
+        xu = self.txu_pr[0,1:15]
 
-        self.Dnn[0,self.hy_idx,:] = torch.hstack((dt0,p0,v0,a0,q0,u0))
+        self.Sqc["ekf"][0,self.sqc_idx,:] = torch.hstack((dt,xu))
+        self.Sqc["cft"][0,self.sqc_idx,:] = self.fts_pr[0,:]
 
-        # Update Feature Vector History
-        for network in self.zcr:
-            self.Znn[network][0,self.hy_idx,:] = self.zcr[network]
+        # Update the feature map sequence variable
+        self.Sqc["map"][0,self.sqc_idx,:,:,:] = self.pch_pr[0,:,:,:]
 
-        # Increment History Index
-        self.hy_idx += 1                                                # Increment History index
-        if self.hy_idx >= self.Dnn.shape[1]:                           # If history blocks are full, reset index
-            self.hy_idx = 0
+        # Increment sequence index
+        self.sqc_idx += 1                   # Increment History index
+        if self.sqc_idx >= self.Nsqc:       # If history blocks are full, reset index
+            self.sqc_idx = 0
         
-    def decide(self) -> dict[str,torch.Tensor]:
+    def collate(self) -> dict[str,torch.Tensor]:
         """
-        Build the inputs to the neural network model.
+        Collates the inputs to the neural network model.
 
         Returns:
-            inputs: List of inputs to the neural network model.
+            Xnn: Dictionary of inputs to the neural network model.
         """
 
-        khy,Nhy = self.hy_idx-1,self.Dnn.shape[1]
-        idx_hy = (torch.arange(Nhy,0,-1)+khy)%Nhy
+        # Determine the current sequence index and the number of history blocks
+        k_sqc,N_sqc = self.sqc_idx-1,self.Nsqc
+        idx_sqc = (torch.arange(N_sqc,0,-1)+k_sqc)%N_sqc
         
-        xnn_im,xnn_ob = self.Img, self.Obj
-        xnn_cr = self.txcr
-        xnn_hy = self.Dnn[:,idx_hy,:]
-        xnn_ft = {key: self.Znn[key][:,idx_hy,:] for key in self.Znn.keys()} 
+        # Extract the relevant data
+        xnn_tx,xnn_rgb,xnn_fts = self.txu_cr[:,0:11],self.rgb_cr,self.fts_cr
+        xnn_ekf = self.Sqc["ekf"][:,idx_sqc,:]
+        xnn_cft = self.Sqc["cft"][:,idx_sqc,:]
+        xnn_map = self.Sqc["map"][:,idx_sqc,:,:,:]
 
-
-        # Generate the inputs to the neural network model
-        inputs = [xnn_im,xnn_ob,xnn_cr,xnn_hy,xnn_ft]
+        # Collate into a list of inputs to the neural network model
+        Xnn = {
+            "current": xnn_tx, "rgb_image": xnn_rgb, "wrench": xnn_fts,
+            "dynamics": xnn_ekf, "wrenches": xnn_cft, "feature_arrays": xnn_map
+        }
         
-        return inputs
+        return Xnn
     
-    def act(self,
-            xnn: list[torch.Tensor]) -> tuple[
-                np.ndarray,
-                torch.Tensor,
-                dict[str,list[torch.Tensor]]]:
+    def act(self,Xnn:dict[str,torch.Tensor]) -> tuple[np.ndarray,torch.Tensor,dict[str,list[torch.Tensor]]]:
 
         """
         Function that performs a forward pass of the neural network model and extracts
         the relevant information.
 
         Args:
-            xnn:    Input to the neural network model.
+            Xnn:    Input dictionary into the neural network model.
 
         Returns:
             unn:    Output from the neural network model.
-            znn:    Feature vector output from the feature extractor.
-            Xnn:    Syllabus inputs to the neural networks.
+            Dnn:    Input/Label data for training the neural network models.
         """
 
+        # Query the neural network model
         with torch.no_grad():
-            unn,znn,Xnn = self.policy(*xnn)
+            unn,znn,Dnn = self.policy(Xnn)
 
-        # Post-process the outputs
+        # Update class variables
+        if unn is not None:
+            self.txu_cr[0,11:15] = unn              # Update the current control input
+        if znn is not None:
+            self.pch_cr[0,:,:,:] = znn              # Store the feature map in the pilot
+        
+        # Post-process the output
         unn = unn.cpu().numpy().squeeze()       # Convert command to numpy array
         
-        for value in znn.values():
-            value = value.squeeze()                     # Flatten the feature vector
+        return unn,Dnn
 
-        return unn,znn,Xnn
-
-    def OODA(self,
-             upr: np.ndarray,
-             tcr: float,
-             xcr: np.ndarray,
-             obj: np.ndarray,
-             icr: npt.NDArray[np.uint8]|None,
-             zcr: dict[str,torch.Tensor]) -> tuple[
+    def ORCA(self,t_cr:float,x_cr:np.ndarray,u_pr:np.ndarray,
+                rgb_cr:np.ndarray,dpt_cr:np.ndarray,fts_cr:np.ndarray) -> tuple[
                  np.ndarray,
                  dict[str,torch.Tensor],
                  dict[str,list[torch.Tensor]],
                  np.ndarray]:
         """
-        Function that runs the OODA loop. This is the main function that is called by the
+        Function that runs the ORCA loop. This is the main function that is called by the
         pilot during flight.
 
         Args:
-            upr:    Previous control input.
-            tcr:    Current flight time.
-            xcr:    Current state in world frame (observed).
-            obj:    Objective vector.
-            icr:    Current image frame.
-            zcr:    Dictionary of current feature vectors.
+            t_cr:   Current flight time.
+            x_cr:   Current state in world frame (observed).
+            u_pr:   Previous control input.
+            rgb_cr: Current RGB image data.
+            dpt_cr: Current depth image data.
+            fts_cr: Current force/torque sensor data.
 
         Returns:
             unn:    Output from the neural network model.
-            znn:    Feature vector output.
             Xnn:    Inputs/Outputs to the neural networks.
             tsol:   Time taken to solve components of the OODA loop in list form.
         """
@@ -337,38 +340,41 @@ class Pilot(BaseController):
         t0 = time.time()
 
         # Perform the OODA loop
-        self.observe(upr,tcr,xcr,obj,icr,zcr)
+        self.observe(t_cr,x_cr,u_pr,rgb_cr,dpt_cr,fts_cr)
         t1 = time.time()
-        self.orient()
+        self.retain()
         t2 = time.time()
-        xnn = self.decide()
+        Xnn = self.collate()
         t3 = time.time()
-        unn,znn,Xnn = self.act(xnn)
+        unn,Dnn = self.act(Xnn)
         t4 = time.time()
 
         # Get the total time taken
         tsol = np.array([t1-t0,t2-t1,t3-t2,t4-t3])
 
-        return unn,znn,Xnn,tsol
+        return unn,Dnn,tsol
     
-    def control(
-        self,Xcr:dict[str,np.ndarray]
+    def control(self,t_cr:float,x_cr:np.ndarray,u_pr:np.ndarray,
+                rgb_cr:np.ndarray,dpt_cr:np.ndarray,fts_cr:np.ndarray
     ) -> tuple[np.ndarray,dict[str,torch.Tensor],np.ndarray]:
         """
         Name mask for the OODA control loop.
         
         Args:
-            tcr:    Current flight time.
-            xcr:    Current state in world frame (observed).
-            upr:    Previous control input.
-            obj:    Objective vector.
-            icr:    Current image frame.
-            zcr:    Input feature vector.
-        
+            t_cr:   Current flight time.
+            x_cr:   Current state in world frame (observed).
+            u_pr:   Previous control input.
+            rgb_cr: Current RGB image data.
+            dpt_cr: Current depth image data.
+            fts_cr: Current force/torque sensor data.
+
         Returns:
             unn:    Control input.
-            tsol:   Time taken to solve components of the OODA loop in list form.
+            Aux:    Auxiliary outputs (solve time).
         """
-        unn,znn,_,tsol = self.OODA(Xcr)
-        
-        return unn,znn,tsol
+        unn,_,tsol = self.ORCA(t_cr,x_cr,u_pr,rgb_cr,dpt_cr,fts_cr)
+
+        # Compute auxiliary outputs
+        Aux = {"tsol":tsol}  # Auxiliary outputs
+
+        return unn,Aux

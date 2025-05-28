@@ -23,47 +23,50 @@ class SIFU(BaseNet):
         # Initialize the parent class
         super(SIFU, self).__init__(inputs,outputs,network_type)
 
-        # Unpack network configs from config
+        # Unpack some useful variables
+        io_sizes = self.get_io_sizes()
         dropout = layers["dropout"]
-
-        # Unpack network configs from parent
-        prev_size,hisLat_size,output_size = self.get_io_sizes()
+        hidden_sizes = layers["hidden_sizes"]
 
         # Populate the network
-        hidden_sizes = layers["hidden_sizes"] + [hisLat_size]
+        prev_size = io_sizes["xdp"]["dynamics"]
+        mlp_sizes = hidden_sizes + [io_sizes["ydp"]["feature_vector"]]
 
         networks = []
-        for layer_size in hidden_sizes:
+        for layer_size in mlp_sizes:
             networks.append(nn.Linear(prev_size, layer_size))
             networks.append(nn.ReLU())
             networks.append(nn.Dropout(dropout))
 
             prev_size = layer_size
         
-        networks.append(nn.Linear(prev_size, output_size))
+        networks.append(nn.Linear(prev_size, io_sizes["ypd"]["parameters"]))
 
         # Class Variables
         self.networks = nn.Sequential(*networks)
 
-    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
+    def forward(self, Xnn:dict[str,torch.Tensor]) -> dict[str, torch.Tensor]:
         """
         Forward pass of the model.
 
         Args:
-            xnn:    History input.
+            Xnn:    Input dictionary.
 
         Returns:
-            ynn:    Output tensor.
-            ann:    Auxiliary outputs dictionary (if any).
+            Ynn:    Output dictionary.
         """
 
+        # Unpack inputs
+        xnn_dyn = Xnn["dynamics"]
+
         # Flatten the input tensor
-        znn = torch.flatten(xnn, start_dim=-2)
+        xnn = torch.flatten(xnn_dyn, start_dim=-2)
 
         # Forward pass
-        if self.use_fpass == True:
-            ynn = self.networks[:-1](znn)
-        else:
-            ynn = self.networks(znn)
-        
-        return ynn,{}
+        ydp = self.networks[:-1](xnn)
+        ypd = self.networks[-1](ydp)
+
+        # Create the output dictionary
+        Ynn = {"feature_vector": ydp,"parameters": ypd}
+
+        return Ynn

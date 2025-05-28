@@ -133,10 +133,10 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Training
-            for input,label in dataloader:
+            for xnn,ylb in dataloader:
                 # Forward Pass
-                prediction,aux = network(*input)
-                loss = criterion(prediction,label,aux)
+                ypd = network(xnn)
+                loss = criterion(ypd,ylb)
 
                 # Backward Pass
                 loss.backward()
@@ -144,8 +144,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
                 opt.zero_grad()
 
                 # Save loss logs
-                epLosses_tn.append(label.shape[0]*loss.item())
-                Ndata_tn += label.shape[0]
+                epLosses_tn.append(batch_size*loss.item())
+                Ndata_tn += batch_size
 
         # Testing
         epLosses_tt,Ndata_tt = [],0
@@ -155,14 +155,14 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Testing
-            for input,label in dataloader:
+            for xnn,ylb in dataloader:
                 # Forward Pass
-                prediction,aux = network(*input)    
-                loss = criterion(prediction,label,aux)
+                ypd = network(xnn)
+                loss = criterion(ypd,ylb)
 
                 # Save loss logs
-                epLosses_tt.append(label.shape[0]*loss.item())
-                Ndata_tt += label.shape[0]
+                epLosses_tt.append(batch_size*loss.item())
+                Ndata_tt += batch_size
 
         # Loss Diagnostics
         epLoss_tn = sum(epLosses_tn)/Ndata_tn

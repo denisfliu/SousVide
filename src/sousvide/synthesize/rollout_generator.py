@@ -196,21 +196,22 @@ def generate_rollouts(
         controller.update_frame(frame)    
 
         # Simulate the flight
-        Tro,Xro,Uro,Fro,Rgb,Dpt,Aux = simulator.simulate(controller,t0,tf,x0)
+        Tro,Xro,Uro,Fro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)
 
         # Check if the rollout data is useful
         err = np.min(np.linalg.norm(tXUd[:,1:4]-Xro[-1,0:3],axis=1))
         if err < tol_select:
             # Compute Additional Variables
             prms = svu.compute_prms(frame)
-            Fres = svu.compute_Fres(Xro,Uro,Fro,frame,bframe)
+            FTro = np.hstack((Fro,np.zeros_like(Fro)))
+            FTrs = svu.compute_FTrs(Xro,Uro,Fro,frame,bframe)
             FOro = svu.compute_FOro(Tro,Xro,Uro,Fro,frame)
 
             # Package the rollout data
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
-                "params":prms,"Fres":Fres,"FOro":FOro,
-                "tXUd":tXUd,"Ndata":Uro.shape[0],"Aux":Aux,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"FTro":FTro,
+                "params":prms,"FTrs":FTrs,"FOro":FOro,
+                "tXUd":tXUd,"Ndata":Uro.shape[0],"Tsol":Tsol,
                 "rollout_id":str(idx_set+1).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
 

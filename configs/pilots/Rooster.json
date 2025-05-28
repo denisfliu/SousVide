@@ -2,10 +2,10 @@
     "hz": 20,
     "networks": {
         "histNet": {
-            "network_type": "sift",
+            "network_type": "sifu",
             "inputs": {
-                "history": [
-                    [0, 1, 2, 3, 4],
+                "dynamics": [
+                    [ 0, 1, 2, 3, 4],
                     [
                         "dt",
                         "pz",
@@ -20,16 +20,12 @@
                     "parameters": [ ["m", "kt"] ]
                 },
                 "deployment": {
-                    "histLat": [ 8 ]
+                    "feature_vector": [ 8 ]
                 }
             },
             "layers": {
                 "dropout": 0.1,
-                "d_model": 32,
-                "d_ff": 64,
-                "num_heads": 4,
-                "num_layers": 2,
-                "hidden_sizes": [16]
+                "hidden_sizes": [64, 32]
             }
         },
         "commNet": {
@@ -51,7 +47,7 @@
                         "qx", "qy", "qz", "qw"
                     ]
                 ],
-                "histLat": [ 8 ]
+                "feature_vector": [ 8 ]
             },
             "outputs": {
                 "command": [

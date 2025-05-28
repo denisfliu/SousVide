@@ -6,11 +6,7 @@ import sousvide.control.network_helper as nh
 from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
 from sousvide.control.networks.sifu import SIFU
-from sousvide.control.networks.drnet import DRNet
-from sousvide.control.networks.hpnet import HPNet
 from sousvide.control.networks.svnet import SVNet
-from sousvide.control.networks.fhnet import FHNet
-from sousvide.control.networks.menet import MENet
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -47,17 +43,9 @@ def generate_network(
         elif network_type == "sifu":
             network = SIFU(**net_config)
         # Command Networks
-        elif network_type == "drnet":
-            network = DRNet(**net_config)
-        elif network_type == "hpnet":
-            network = HPNet(**net_config)
         elif network_type == "svnet":
             network = SVNet(**net_config)
-        elif network_type == "fhnet":
-            network = FHNet(**net_config)
         # Mixture of Experts Networks
-        elif network_type == "menet":
-            network = MENet(**net_config)
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")

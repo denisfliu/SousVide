@@ -4,6 +4,7 @@ import sousvide.control.network_helper as nh
 
 from torch import nn
 from sousvide.control.networks.base_net import BaseNet
+import sousvide.visualize.rich_utilities as ru
 
 class Policy(nn.Module):
     def __init__(self,
@@ -31,72 +32,59 @@ class Policy(nn.Module):
 
         # Populate the network
         networks:dict[str,BaseNet] = nn.ModuleDict()
-        nhy = 1
+        Nhy = 1
         for name,config in policy_config["networks"].items():
             networks[name] = nf.generate_network(config,name,policy_path)   
 
             # Update the max sequence length variable
-            if nhy_net is not None:
-                nhy = max(nhy,nhy_net)
+            Nhy = max(Nhy,networks[name].Nhy)
 
-            # Ensure all fpass flags are true
+            # Ensure all deploy flags are true
             for network in networks.values():
-                network.use_fpass = True
+                network.use_deploy = True
 
         # Class Variables (last network outputs command)
-        self.fpass_indices = network.fpass_indices
-        self.label_indices = network.label_indices
+        self.io_idxs = network.io_idxs
         self.network_type = policy_name
-        self.nhy = int(nhy)
+        self.Nhy = int(Nhy)
 
         self.networks = networks
 
-    def forward(self,
-                xnn_im:torch.Tensor,xnn_ob:torch.Tensor,
-                xnn_cr:torch.Tensor,xnn_hy:torch.Tensor,xnn_ft:torch.Tensor) -> tuple[
+    def forward(self,Xnn:dict[str,torch.Tensor]) -> tuple[
                     torch.Tensor,dict[str,torch.Tensor],dict[str,torch.Tensor]]:
         """
         Forward pass of the model.
 
         Args:
-            xnn_im: RGB Image input.
-            xnn_ob: Objective input.
-            xnn_cr: Current input.
-            xnn_hy: History input.
-            xnn_ft: Feature input.
+            Xnn:    Dictionary of input tensors.
 
         Returns:
-            ynn:        Policy output.
-            znn:        Feature output.
-            xnn_dict:   Dictionary of Network inputs.
+            ynn:    Policy output.
+            znn:    Feature output.
+            Xpd:    Dictionary for prediction inputs.
         """
 
-        # Initialize the input source dictionary
-        xnn_srcs = {
-            "rgb_image": xnn_im, "objective": xnn_ob,
-            "current": xnn_cr, "history": xnn_hy, "features": xnn_ft
-        }
+        # Initialize output variables
+        ynn,znn,Xpd = None,None,{}
 
         # Forward Pass through the networks
-        znn,xnn_dict = {},{}
         for net_name,network in self.networks.items():
             # Extract the Network Inputs and Input Key
-            xnn_net = nh.extract_io(xnn_srcs,network.input_indices)
-            xnn_key = next(iter(network.fpass_indices))
+            xnn_idxs = network.io_idxs["xdp"]
+            Xnn_net = nh.extract_io(Xnn,xnn_idxs)
 
-            # Forward Pass through the Network
-            ynn_net,_ = network(*xnn_net)
+            # Update dictionary with forward pass through the network
+            Ynn_net:dict = network(Xnn_net)
+
+            # Extract policy outputs (first value of featNet/commNet)
+            if net_name == "featNet":
+                znn = next(iter(Ynn_net.values()))
+            elif net_name == "commNet":
+                ynn = next(iter(Ynn_net.values()))
+
+            Xpd[net_name] = Xnn_net
+
+            # Update Xnn
+            Xnn = Xnn|Ynn_net
             
-            # Update xnn_srcs
-            xnn_srcs[xnn_key] = ynn_net
-
-            # Update the znn dictionary
-            znn[net_name] = ynn_net
-
-            # Store input data for training
-            xnn_dict[net_name] = xnn_net
-
-        # Last network output is the policy output
-        ynn = ynn_net
-
-        return ynn,znn,xnn_dict
+        return ynn,znn,Xpd

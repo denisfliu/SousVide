@@ -30,11 +30,11 @@ def compute_prms(frame:dict[str,np.ndarray,str|int|float]) -> list:
 
     return params
 
-def compute_Fres(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
+def compute_FTrs(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
              frame:dict[str,np.ndarray,str|int|float],
              bframe:dict[str,np.ndarray,str|int|float]) -> np.ndarray:
     """
-    Computes the resultant forces acting on the frame.
+    Computes the resultant force/torques acting on the frame.
 
     Args:
         Xro:    State vector.
@@ -44,7 +44,7 @@ def compute_Fres(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
         bframe: Base frame configuration.
 
     Returns:
-        Fres:   Resultant forces array.
+        FTro:   Resultant forces array.
     """
 
     # Some useful constants
@@ -58,7 +58,7 @@ def compute_Fres(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
     k_fr,k_bs = frame["motor_thrust_coeff"],bframe["motor_thrust_coeff"]
     
     # Compute the resultant forces
-    Fres = np.zeros((Ndt,3))
+    FTrs = np.zeros((Ndt,6))
     for i in range(Ndt):
         # Unpack data
         xcr = Xro[i,:]
@@ -72,9 +72,9 @@ def compute_Fres(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
         f_dgv = (m_fr-m_bs)*g                   # Difference from gravity
         f_dth = (k_fr-k_bs)*n_mtr*ucr[0]*zb     # Difference from thrust
 
-        Fres[i,:] = f_dgv + Rb2w@f_dth + fcr
+        FTrs[i,0:3] = f_dgv + Rb2w@f_dth + fcr
 
-    return Fres
+    return FTrs
 
 def compute_FOro(Tro:np.ndarray,Xro:np.ndarray,Uro:np.ndarray,
                Fro:np.ndarray,frame:dict[str,np.ndarray,str|int|float]) -> np.ndarray:

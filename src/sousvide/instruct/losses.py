@@ -10,20 +10,12 @@ def loss_load_balance(weights):
 
 class LossFn:
     def __init__(self, alpha=0.1, beta=0.1):
-        self.alpha = alpha
-        self.beta = beta
+        pass
 
-    def __call__(self, ynn_hat, ynn, ann):
-        loss_mse = F.mse_loss(ynn_hat, ynn, reduction='mean')
+    def __call__(self, ypd:dict[str,torch.Tensor], ylb:dict[str,torch.Tensor]):
 
-        if "weights" in ann:
-            weights = ann["weights"]
-            loss_ent = loss_entropy(weights)
-            loss_lbl = loss_load_balance(weights)
-
-            loss = loss_mse + self.alpha*loss_ent + self.beta*loss_lbl
-        else:
-            loss = loss_mse
-
+        loss = 0.0
+        for key in ylb.keys():
+            loss += F.mse_loss(ypd[key], ylb[key], reduction='mean')
 
         return loss

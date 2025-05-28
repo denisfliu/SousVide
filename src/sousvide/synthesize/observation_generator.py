@@ -88,17 +88,15 @@ def generate_observation_data(cohort:str,roster:list[str],
                 # Generate Observation Data
                 for idx_ds,(traj_data_file,imgs_data_file) in enumerate(zip(traj_data_files,imgs_data_files)):
                     # Load the Data
-                    traj_dataset = torch.load(os.path.join(traj_data_folder,traj_data_file))
-                    imgs_dataset = torch.load(os.path.join(imgs_data_folder,imgs_data_file))
+                    traj_ds = torch.load(os.path.join(traj_data_folder,traj_data_file))
+                    imgs_ds = torch.load(os.path.join(imgs_data_folder,imgs_data_file))
 
                     # Reset the observations progress bar
-                    progress.reset(obsv_task,description=obsv_desc1,total=len(traj_dataset))
+                    progress.reset(obsv_task,description=obsv_desc1,total=len(traj_ds))
                     obsv_bar = (progress,obsv_task)
     
                     # Extract the Observations
-                    observations,Nobs = generate_observations(pilot,
-                                                              traj_dataset,imgs_dataset,
-                                                              subsample,obsv_bar)
+                    observations,Nobs = generate_observations(pilot,traj_ds,imgs_ds,subsample,obsv_bar)
                     
                     # Update the observations progress bar
                     progress.update(obsv_task,description=obsv_desc2)
@@ -138,15 +136,15 @@ def generate_observations(pilot:Pilot,
     for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
-        Uro,Fro = traj_data["Uro"],traj_data["Fro"]
-        Fres,FOro = traj_data["Fres"],traj_data["FOro"]
+        Uro,FTro = traj_data["Uro"],traj_data["FTro"]
+        FTrs = traj_data["FTrs"]
         Ndata = traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
         frame,params = traj_data["frame"],traj_data["params"]
     
         # Decompress and extract the image data if compressed
-        Imgs:dict[str,np.ndarray] = dch.decompress_data(imgs_data)
-        Rgbs,Dpts = Imgs["rgb"],Imgs["depth"]
+        Imgs = dch.decompress_data(imgs_data)
+        Rgbs = Imgs["rgb"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.
@@ -155,15 +153,10 @@ def generate_observations(pilot:Pilot,
         if height == 224 and width == 224:
             Rgbs = np.transpose(Rgbs, (0, 3, 1, 2))
 
+        # Generate the observation data
         Xnn,Ynn = [],[]
         upr = np.zeros(4)
-        znn_cr =  pilot.generate_feature_variables(pilot.policy.nhy)[0]
-
-        ### TODO: Properly 
-        Nhn = 21
-        ### =======================
-
-        for k in range(Ndata-Nhn):
+        for k in range(Ndata):
             # Generate current state (with/without noise augmentation)
             if aug_type == "additive":
                 xcr = Xro[k,:] + np.random.normal(aug_mean,aug_std)
@@ -175,38 +168,34 @@ def generate_observations(pilot:Pilot,
             # Extract other data
             tcr,ucr = Tro[k],Uro[k,:]            
             txcr = np.hstack((Tro[k],Xro[k,:]))
-            fcr,frs = Fro[k,:],Fres[k,:]
+            fts_cr = FTro[k,:]
+            frs_cr = FTrs[k,:]
             rgb_cr = Rgbs[k,:,:,:]
-            dpt_cr = Dpts[k,:,:,:]
-
-            # Calculate flat output horizon
-            FOhn = FOro[k:k+Nhn,:,0]
-            FOhn = FOhn-FOhn[0,:,].reshape(1,-1) 
 
             # Compute the source labels
             ynn_srcs = {
                 "current": torch.tensor(txcr,dtype=torch.float32).unsqueeze(0),
                 "parameters": torch.tensor(params,dtype=torch.float32).unsqueeze(0),
-                "forces": torch.tensor(fcr,dtype=torch.float32).unsqueeze(0),
-                "resultant": torch.tensor(frs,dtype=torch.float32).unsqueeze(0),
-                "fo_horizon": torch.tensor(FOhn,dtype=torch.float32).unsqueeze(0),
+                "wrench": torch.tensor(fts_cr,dtype=torch.float32).unsqueeze(0),
+                "resultant": torch.tensor(frs_cr,dtype=torch.float32).unsqueeze(0),
                 "command": torch.tensor(ucr,dtype=torch.float32).unsqueeze(0),
             }
             
             # Rollout and collect the inputs
-            _,znn_cr,xnn_cr,_ = pilot.OODA(upr,tcr,xcr,obj,rgb_cr,znn_cr)
+            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,fts_cr)
 
             # Extract the labels from source and trim inputs if they don't exist
-            ynn_cr = {}
-            for xnn_key in xnn_cr.keys():
-                ynn_idxs = pilot.policy.networks[xnn_key].label_indices
-                ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,
-                                                use_tensor=True,flatten=True)
+            Ynn_cr = {}
+            for dnn_key in Dnn_cr.keys():
+                ynn_idxs = pilot.policy.networks[dnn_key].io_idxs["ypd"]
+                ynn_cr = nh.extract_io(ynn_srcs,ynn_idxs)
+
+                Ynn_cr[dnn_key] = ynn_cr
 
             # Collect data conditioned on subsample step and history window
             if k % nss == 0:
-                Xnn.append(xnn_cr)
-                Ynn.append(ynn_cr)
+                Xnn.append(Dnn_cr)
+                Ynn.append(Ynn_cr)
 
             # Loop updates
             upr = ucr
@@ -264,7 +253,7 @@ def save_observations(cohort_name:str,course_name:str,
         if value is not None:
             if networks is None or key in networks:
                 syllabus.append(key)
-    
+
     for topic_name in syllabus:
         # Create the topic directory if it doesn't exist
         topic_path = os.path.join(cohort_path,"observation_data",pilot_name,topic_name,course_name)
@@ -279,6 +268,7 @@ def save_observations(cohort_name:str,course_name:str,
             for xnn,ynn in zip(observations["Xnn"],observations["Ynn"]):
                 Xnn.append(xnn[topic_name])
                 Ynn.append(ynn[topic_name])
+
         data = {"Xnn":Xnn,"Ynn":Ynn,"Ndata":len(Ynn)}
         
         torch.save(data,data_path)

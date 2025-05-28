@@ -69,7 +69,6 @@ def deploy_roster(cohort_name:str,
 
     Tsd,FOd = mts.get_desired_trajectory()
     tXUd = th.TsFO_to_tXU(Tsd,FOd,m_bs,kt_bs,fex)
-    obj = svu.tXU_to_obj(tXUd)
 
     # Get the batch of sample start times
     t0,tf = Tsd[0],Tsd[-1]
@@ -95,7 +94,7 @@ def deploy_roster(cohort_name:str,
     crew = ["expert"]+roster
     
     # Initialize the simulator
-    simulator = Simulator(gsplat,method["rollout"])
+    simulator = Simulator(gsplat,method)
     simulator.update_forces(course["forces"])
 
     Metrics = {}
@@ -118,23 +117,31 @@ def deploy_roster(cohort_name:str,
             simulator.update_frame(frame)
 
             # Update pilot
-            controller.set_initial_memory(x0)
+            controller.reset_memory(x0)
 
             # Simulate Trajectory
-            Tro,Xro,Uro,Iro,Dro,Fro,Tsol = simulator.simulate(controller,t0,tf,x0,obj)
+            Tro,Xro,Uro,Fro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)
+
+            # Compute Additional Variables
+            prms = svu.compute_prms(frame)
+            FTro = np.hstack((Fro,np.zeros_like(Fro)))
+            FTrs = svu.compute_FTrs(Xro,Uro,Fro,frame,bframe)
+            FOro = svu.compute_FOro(Tro,Xro,Uro,Fro,frame)
 
             # Save Trajectory
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Fro":Fro,
-                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"FTro":FTro,
+                "params":prms,"FTrs":FTrs,"FOro":FOro,
+                "tXUd":tXUd,"Ndata":Uro.shape[0],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
+            
             trajectories.append(trajectory)
 
         # Compile deployment data
         deployment_data = {
             "trajectories":trajectories,
-            "video": {"hz":controller.hz,"rgb":Iro,"depth":Dro},
+            "video": {"hz":controller.hz,"rgb":Rgb,"depth":Dpt},
         }
 
         # Update the metrics table
