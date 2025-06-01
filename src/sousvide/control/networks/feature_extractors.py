@@ -49,7 +49,7 @@ class DINOv2(nn.Module):
     def forward(self, xnn) -> tuple[torch.Tensor,torch.Tensor]:
         outputs = self.vit(xnn)
 
-        ynn = outputs.last_hidden_state[:,1:,:]
-        cls = outputs.last_hidden_state[:,0,:]
+        ynn = outputs.last_hidden_state[:,1:,:].squeeze(0)
+        cls = outputs.last_hidden_state[:,0,:].squeeze(0)
 
         return ynn,cls

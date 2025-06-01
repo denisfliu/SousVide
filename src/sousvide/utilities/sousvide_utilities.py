@@ -30,7 +30,7 @@ def compute_prms(frame:dict[str,np.ndarray,str|int|float]) -> list:
 
     return params
 
-def compute_FTrs(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
+def compute_Wrs(Xro:np.ndarray,Uro:np.ndarray,Wro:np.ndarray,
              frame:dict[str,np.ndarray,str|int|float],
              bframe:dict[str,np.ndarray,str|int|float]) -> np.ndarray:
     """
@@ -39,12 +39,12 @@ def compute_FTrs(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
     Args:
         Xro:    State vector.
         Uro:    Control input vector.
-        Fro:    External forces.
+        Wro:    External wrench vector.
         frame:  Frame configuration.
         bframe: Base frame configuration.
 
     Returns:
-        FTro:   Resultant forces array.
+        Wrs:   Resultant forces array.
     """
 
     # Some useful constants
@@ -58,12 +58,12 @@ def compute_FTrs(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
     k_fr,k_bs = frame["motor_thrust_coeff"],bframe["motor_thrust_coeff"]
     
     # Compute the resultant forces
-    FTrs = np.zeros((Ndt,6))
+    Wrs = np.zeros_like(Wro)
     for i in range(Ndt):
         # Unpack data
         xcr = Xro[i,:]
         ucr = Uro[i,:]
-        fcr = Fro[i,:]
+        fcr = Wro[i,0:3]
 
         # Compute rotation matrix
         Rb2w = R.from_quat(xcr[6:10]).as_matrix()
@@ -72,12 +72,13 @@ def compute_FTrs(Xro:np.ndarray,Uro:np.ndarray,Fro:np.ndarray,
         f_dgv = (m_fr-m_bs)*g                   # Difference from gravity
         f_dth = (k_fr-k_bs)*n_mtr*ucr[0]*zb     # Difference from thrust
 
-        FTrs[i,0:3] = f_dgv + Rb2w@f_dth + fcr
+        Wrs[i,0:3] = f_dgv + Rb2w@f_dth + fcr
+        Wrs[i,3:6] = Wro[i,3:6]                 # Copy the torque vector
 
-    return FTrs
+    return Wrs
 
 def compute_FOro(Tro:np.ndarray,Xro:np.ndarray,Uro:np.ndarray,
-               Fro:np.ndarray,frame:dict[str,np.ndarray,str|int|float]) -> np.ndarray:
+               Wro:np.ndarray,frame:dict[str,np.ndarray,str|int|float]) -> np.ndarray:
     """
     Computes the flat output sequence given a trajectory rollout
 
@@ -85,7 +86,7 @@ def compute_FOro(Tro:np.ndarray,Xro:np.ndarray,Uro:np.ndarray,
         Tro:    Time vector.
         Xro:    State vector.
         Uro:    Control input vector.
-        Fro:    Force vector.
+        Wro:    Force/Torque vector.
         frame:  Frame configuration.
     
     Returns:
@@ -95,7 +96,8 @@ def compute_FOro(Tro:np.ndarray,Xro:np.ndarray,Uro:np.ndarray,
 
     # Unpack variables
     tXU = np.hstack((Tro[:-1].reshape((-1,1)),Xro[:-1,:],Uro))
-
+    Fro = Wro[:,0:3]            # Extract only the force part
+    
     # Compute the flat output
     _,FO = th.tXU_to_TsFO(tXU,Fro,frame)
 

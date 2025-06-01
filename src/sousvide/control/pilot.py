@@ -333,7 +333,7 @@ class Pilot(BaseController):
         Returns:
             unn:    Output from the neural network model.
             Xnn:    Inputs/Outputs to the neural networks.
-            tsol:   Time taken to solve components of the OODA loop in list form.
+            tsol:   Time taken to solve components of the ORCA loop in dict form.
         """
         
         # Get the current time
@@ -350,7 +350,12 @@ class Pilot(BaseController):
         t4 = time.time()
 
         # Get the total time taken
-        tsol = np.array([t1-t0,t2-t1,t3-t2,t4-t3])
+        tsol = {
+            "observe": t1-t0,
+            "retain": t2-t1,
+            "collate": t3-t2,
+            "act": t4-t3
+        }
 
         return unn,Dnn,tsol
     
@@ -370,11 +375,8 @@ class Pilot(BaseController):
 
         Returns:
             unn:    Control input.
-            Aux:    Auxiliary outputs (solve time).
+            tsol:   Dictionary containing the solve times for each component of the ORCA loop.
         """
         unn,_,tsol = self.ORCA(t_cr,x_cr,u_pr,rgb_cr,dpt_cr,fts_cr)
 
-        # Compute auxiliary outputs
-        Aux = {"tsol":tsol}  # Auxiliary outputs
-
-        return unn,Aux
+        return unn,tsol

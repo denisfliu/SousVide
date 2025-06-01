@@ -200,4 +200,11 @@ def extract_rollout_data(cohort:str,course:str) -> tuple[np.ndarray,np.ndarray,n
     Tro,Xro,Uro = traj["Tro"],traj["Xro"],traj["Uro"]
     Iro = imgs["rgb"]
 
-    return Tro,Xro,Uro,Iro
+    Tc2b = np.array(traj["frame"]["camera_to_body_transform"])
+    fx,fy = traj["frame"]["camera"]["fx"],traj["frame"]["camera"]["fy"]
+    cx,cy = traj["frame"]["camera"]["cx"],traj["frame"]["camera"]["cy"]
+    K = np.array([[fx,  0, cx],
+                  [ 0, fy, cy],
+                  [ 0,  0,  1]])
+
+    return Tro,Xro,Uro,Iro,Tc2b,K

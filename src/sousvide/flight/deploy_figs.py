@@ -120,18 +120,17 @@ def deploy_roster(cohort_name:str,
             controller.reset_memory(x0)
 
             # Simulate Trajectory
-            Tro,Xro,Uro,Fro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)
+            Tro,Xro,Uro,Wro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)
 
             # Compute Additional Variables
             prms = svu.compute_prms(frame)
-            FTro = np.hstack((Fro,np.zeros_like(Fro)))
-            FTrs = svu.compute_FTrs(Xro,Uro,Fro,frame,bframe)
-            FOro = svu.compute_FOro(Tro,Xro,Uro,Fro,frame)
+            Wrs = svu.compute_Wrs(Xro,Uro,Wro,frame,bframe)
+            FOro = svu.compute_FOro(Tro,Xro,Uro,Wro,frame)
 
             # Save Trajectory
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,"FTro":FTro,
-                "params":prms,"FTrs":FTrs,"FOro":FOro,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Wro":Wro,
+                "params":prms,"Wrs":Wrs,"FOro":FOro,
                 "tXUd":tXUd,"Ndata":Uro.shape[0],"Tsol":Tsol,
                 "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}

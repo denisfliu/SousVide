@@ -136,8 +136,8 @@ def generate_observations(pilot:Pilot,
     for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
-        Uro,FTro = traj_data["Uro"],traj_data["FTro"]
-        FTrs = traj_data["FTrs"]
+        Uro,Wro = traj_data["Uro"],traj_data["Wro"]
+        Wrs = traj_data["Wrs"]
         Ndata = traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
         frame,params = traj_data["frame"],traj_data["params"]
@@ -168,21 +168,21 @@ def generate_observations(pilot:Pilot,
             # Extract other data
             tcr,ucr = Tro[k],Uro[k,:]            
             txcr = np.hstack((Tro[k],Xro[k,:]))
-            fts_cr = FTro[k,:]
-            frs_cr = FTrs[k,:]
+            wro_cr = Wro[k,:]
+            wrs_cr = Wrs[k,:]
             rgb_cr = Rgbs[k,:,:,:]
 
             # Compute the source labels
             ynn_srcs = {
                 "current": torch.tensor(txcr,dtype=torch.float32).unsqueeze(0),
                 "parameters": torch.tensor(params,dtype=torch.float32).unsqueeze(0),
-                "wrench": torch.tensor(fts_cr,dtype=torch.float32).unsqueeze(0),
-                "resultant": torch.tensor(frs_cr,dtype=torch.float32).unsqueeze(0),
+                "wrench": torch.tensor(wro_cr,dtype=torch.float32).unsqueeze(0),
+                "resultant": torch.tensor(wrs_cr,dtype=torch.float32).unsqueeze(0),
                 "command": torch.tensor(ucr,dtype=torch.float32).unsqueeze(0),
             }
             
             # Rollout and collect the inputs
-            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,fts_cr)
+            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,wro_cr)
 
             # Extract the labels from source and trim inputs if they don't exist
             Ynn_cr = {}
