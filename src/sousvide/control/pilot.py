@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import time
 import os
-import json
-import numpy.typing as npt
 import albumentations as A
 import figs.utilities.config_helper as ch
 
@@ -34,12 +32,14 @@ class Pilot(BaseController):
             rgb_cr:         Current RGB image.
             fts_cr:         Current force/torque sensor data.
             pch_cr:         Current feature map.
+            cls_cr:         Current class token.
             sqc_idx:        Current index in the sequence.
             Nsqc:           Number of history blocks.
             Sqc:            Sequence arrays containing EKF, CoinFT and feature map data.
             txu_pr:         Previous time, state and input variables.
             fts_pr:         Previous force/torque sensor data.
             pch_pr:         Previous feature map.
+            cls_pr:         Previous class token.
             da_cfg:         Data augmentation configuration.
             name:           Name of the pilot.
             hz:             Frequency of the pilot.
@@ -67,7 +67,8 @@ class Pilot(BaseController):
         Sqc = {
             "ekf": torch.zeros((1,Nsqc,Ntxu)).to(device),          # EKF data (dt, p, v, q, u)
             "cft": torch.zeros((1,Nsqc,Nft)).to(device),           # CoinFT data
-            "map": torch.zeros((1,Nsqc,16,16,768)).to(device)      # Feature map data
+            "map": torch.zeros((1,Nsqc,16,16,768)).to(device),     # Feature map data
+            "tok": torch.zeros((1,Nsqc,768)).to(device)           # Class token data
         }
 
         # Initialize image processing variables
@@ -93,13 +94,13 @@ class Pilot(BaseController):
         self.process_image = process_image
 
         # Policy Input Variables
-        self.txu_cr = torch.zeros((1,Ntxu)).to(device)         # Current Time,State and Input
-        self.rgb_cr = torch.zeros(img_dim).to(device)          # Current Image
-        self.fts_cr = torch.zeros((1,6)).to(device)            # Current Force/Torque sensor data
+        self.txu_cr = torch.zeros((1,Ntxu)).to(device)          # Current Time,State and Input
+        self.rgb_cr = torch.zeros(img_dim).to(device)           # Current Image
+        self.fts_cr = torch.zeros((1,6)).to(device)             # Current Force/Torque sensor data
 
         # Feature Map Variables
-        self.pch_cr = torch.zeros((1,16,16,768)).to(device)    # Current Feature Map
-
+        self.pch_cr = torch.zeros((1,16,16,768)).to(device)     # Current Feature Map
+        self.cls_cr = torch.zeros((1,768)).to(device)           # Current Class Token
         # Sequence Variables
         self.sqc_idx = 0                                        # Current index in the sequence
         self.Nsqc = Nsqc                                        # Number of history blocks  
@@ -108,6 +109,7 @@ class Pilot(BaseController):
         self.txu_pr = torch.zeros((1,Ntxu)).to(device)         # Previous Time,State and Input
         self.fts_pr = torch.zeros((1,6)).to(device)            # Previous Force/Torque sensor data
         self.pch_pr = torch.zeros((1,16,16,768)).to(device)    # Previous Feature Map
+        self.cls_pr = torch.zeros((1,768)).to(device)          # Previous Class Token
 
         # Data Augmentation
         self.da_cfg = {
@@ -142,7 +144,7 @@ class Pilot(BaseController):
             raise ValueError("Invalid mode. Must be 'train' or 'deploy'.")
 
     def reset_memory(self,x0:np.ndarray,u0:np.ndarray=None,
-                     fts0:np.ndarray=None,pch0:torch.Tensor=None) -> None:
+                     fts0:np.ndarray=None,pch0:torch.Tensor=None,cls0:torch.Tensor=None) -> None:
         """
         Function that sets the initial states of the pilot.
 
@@ -151,6 +153,7 @@ class Pilot(BaseController):
             u0: Initial control input.
             fts0: Initial force/torque sensor data.
             pch0: Initial feature map.
+            cls0: Initial class token.
 
         Returns:
             None
@@ -166,17 +169,22 @@ class Pilot(BaseController):
         if pch0 is None:
             pch0 = torch.zeros((16,16,768)).to(self.device)
 
+        if cls0 is None:
+            cls0 = torch.zeros((768)).to(self.device)
+
         # Convert Non-Torch Tensor Variables to Torch Tensors on GPU
         x0 = torch.from_numpy(x0).float().to(self.device).unsqueeze(0)
         u0 = torch.from_numpy(u0).float().to(self.device).unsqueeze(0)
         fts0 = torch.from_numpy(fts0).float().to(self.device).unsqueeze(0)
         pch0 = pch0.unsqueeze(0).to(self.device)  # Ensure pch0 is a 4D tensor
-        
+        cls0 = cls0.unsqueeze(0).to(self.device)  # Ensure cls0 is a 2D tensor
+
         # Set the initial sequence states
         self.txu_pr[0,1:11] = self.txu_cr[0,1:11] = x0
         self.txu_pr[0,11:15] = self.txu_cr[0,11:15] = u0
         self.fts_pr = self.fts_cr = fts0
         self.pch_pr = self.pch_cr = pch0
+        self.cls_pr = self.cls_cr = cls0
 
         for i in range(self.Sqc["ekf"].shape[1]):
             self.Sqc["ekf"][0,i,0] = 0.0
@@ -185,6 +193,7 @@ class Pilot(BaseController):
 
             self.Sqc["cft"][0,i,:] = fts0
             self.Sqc["map"][0,i,:,:,:] = pch0
+            self.Sqc["tok"][0,i,:] = cls0
 
     def observe(self,t_cr:float,x_cr:np.ndarray,u_pr:np.ndarray,
                 rgb_cr:np.ndarray|None,dpt_cr:None,
@@ -225,6 +234,7 @@ class Pilot(BaseController):
         self.txu_pr[0,0:11],self.txu_pr[0,11:15] = self.txu_cr[0,0:11],u_pr
         self.fts_pr[0,:] = self.fts_cr[0,:]
         self.pch_pr[0,:,:,:] = self.pch_cr[0,:,:,:]
+        self.cls_pr[0,:] = self.cls_cr[0,:]
 
         # Update current variables
         self.txu_cr[0,0],self.txu_cr[0,1:11] = t_cr,x_cr        
@@ -251,6 +261,7 @@ class Pilot(BaseController):
 
         # Update the feature map sequence variable
         self.Sqc["map"][0,self.sqc_idx,:,:,:] = self.pch_pr[0,:,:,:]
+        self.Sqc["tok"][0,self.sqc_idx,:] = self.cls_pr[0,:]
 
         # Increment sequence index
         self.sqc_idx += 1                   # Increment History index
@@ -274,11 +285,12 @@ class Pilot(BaseController):
         xnn_ekf = self.Sqc["ekf"][:,idx_sqc,:]
         xnn_cft = self.Sqc["cft"][:,idx_sqc,:]
         xnn_map = self.Sqc["map"][:,idx_sqc,:,:,:]
+        xnn_tok = self.Sqc["tok"][:,idx_sqc,:]
 
         # Collate into a list of inputs to the neural network model
         Xnn = {
             "current": xnn_tx, "rgb_image": xnn_rgb, "wrench": xnn_fts,
-            "dynamics": xnn_ekf, "wrenches": xnn_cft, "feature_arrays": xnn_map
+            "dynamics": xnn_ekf, "wrenches": xnn_cft, "patches": xnn_map, "class_token": xnn_tok
         }
         
         return Xnn
@@ -299,13 +311,15 @@ class Pilot(BaseController):
 
         # Query the neural network model
         with torch.no_grad():
-            unn,znn,Dnn = self.policy(Xnn)
+            unn,pch,cls,Dnn = self.policy(Xnn)
 
         # Update class variables
         if unn is not None:
             self.txu_cr[0,11:15] = unn              # Update the current control input
-        if znn is not None:
-            self.pch_cr[0,:,:,:] = znn              # Store the feature map in the pilot
+        if pch is not None:
+            self.pch_cr[0,:,:,:] = pch              # Store the feature map in the pilot
+        if cls is not None:
+            self.cls_cr[0,:] = cls                  # Store the class token in the pilot
         
         # Post-process the output
         unn = unn.cpu().numpy().squeeze()       # Convert command to numpy array

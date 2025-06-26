@@ -1,0 +1,41 @@
+{
+    "hz": 20,
+    "networks": {
+        "commNet": {
+            "network_type": "pave",
+            "inputs": {
+                "dynamics": [
+                    [ 0, 1, 2, 3, 4],
+                    [
+                        "dt",
+                        "px", "py", "pz",
+                        "vx", "vy", "vz",
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
+                    ]
+                ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "layers": {
+                "hidden_sizes": [16, 16]
+            }
+        }
+    },
+    "data_augmentation": {
+        "type": "additive",
+        "mean": [
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
+        ],
+        "std": [
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
+        ]
+    }
+}

@@ -118,6 +118,7 @@ def deploy_roster(cohort_name:str,
 
             # Update pilot
             controller.reset_memory(x0)
+            controller.update_frame(frame)
 
             # Simulate Trajectory
             Tro,Xro,Uro,Wro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)

@@ -25,7 +25,7 @@ transform = A.Compose([
         ])            
 process_image = lambda x: transform(image=x)["image"]
 
-def generate_heatmap_data(gsplat_name:str,frame_name:str,p_tW:np.ndarray,Ntot:int,folder:str,
+def generate_circus_data(gsplat_name:str,frame_name:str,p_tW:np.ndarray,Ntot:int,folder:str,
                           Ndps:int=100,Np:int=16,sigma:float=30.0) -> dict[str,np.ndarray]:
 
     # Some useful constants
@@ -54,7 +54,7 @@ def generate_heatmap_data(gsplat_name:str,frame_name:str,p_tW:np.ndarray,Ntot:in
     pch_v = np.linspace(pch_h/2, img_h-pch_h/2, Np)         # along height
 
     # Load ViT
-    vit = fe.DINO()
+    vit = fe.DINOv2()
 
     for idx in range(Nds):
         # Determine the number of data points for this dataset
@@ -75,8 +75,7 @@ def generate_heatmap_data(gsplat_name:str,frame_name:str,p_tW:np.ndarray,Ntot:in
 
             # Process the image
             icr = process_image(iro)
-            ynn = vit(icr.unsqueeze(0))  # Get the patch features
-            pch,cls = ynn["patches"], ynn["class_token"]
+            pch,cls = vit(icr.unsqueeze(0))  # Get the patch features
 
             # Get current overlay
             u,v = UVc[i,0], UVc[i,1]

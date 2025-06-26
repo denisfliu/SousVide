@@ -2,11 +2,9 @@ import numpy as np
 import os
 import torch
 
-import sousvide.utilities.sousvide_utilities as svu
 import sousvide.synthesize.data_compress_helper as dch
 import sousvide.control.network_helper as nh
 import sousvide.visualize.rich_utilities as ru
-import figs.utilities.transform_helper as th
 
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
@@ -171,6 +169,9 @@ def generate_observations(pilot:Pilot,
             wro_cr = Wro[k,:]
             wrs_cr = Wrs[k,:]
             rgb_cr = Rgbs[k,:,:,:]
+            
+            # Rollout and collect the inputs
+            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,wro_cr)
 
             # Compute the source labels
             ynn_srcs = {
@@ -179,17 +180,16 @@ def generate_observations(pilot:Pilot,
                 "wrench": torch.tensor(wro_cr,dtype=torch.float32).unsqueeze(0),
                 "resultant": torch.tensor(wrs_cr,dtype=torch.float32).unsqueeze(0),
                 "command": torch.tensor(ucr,dtype=torch.float32).unsqueeze(0),
+                "patches": pilot.pch_cr.cpu().clone(),
+                "class_token": pilot.cls_cr.cpu().clone()
             }
-            
-            # Rollout and collect the inputs
-            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,wro_cr)
 
             # Extract the labels from source and trim inputs if they don't exist
             Ynn_cr = {}
             for dnn_key in Dnn_cr.keys():
+                # if dnn_key != "featNet":
                 ynn_idxs = pilot.policy.networks[dnn_key].io_idxs["ypd"]
                 ynn_cr = nh.extract_io(ynn_srcs,ynn_idxs)
-
                 Ynn_cr[dnn_key] = ynn_cr
 
             # Collect data conditioned on subsample step and history window

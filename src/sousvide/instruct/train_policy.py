@@ -256,9 +256,6 @@ def get_network(policy:Policy,net_name:str|list[str]) -> BaseNet:
     # Get the network
     network = policy.networks[net_name]
     
-    # Switch from network forward pass to label pass (if it exists)
-    network.use_fpass = False
-
     # Lock/Unlock the network
     network.train()
     for param in network.parameters():

@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
+from sousvide.control.networks.base_net import BaseNet
 from torchvision.models import (
     vit_b_16,convnext_tiny,efficientnet_v2_s,
     ViT_B_16_Weights,ConvNeXt_Tiny_Weights,EfficientNet_V2_S_Weights
 )
-import os
-from transformers import AutoProcessor, AutoModel
+from transformers import AutoModel
 
 class VitB16(nn.Module):
     def __init__(self):
@@ -33,23 +33,40 @@ class VitB16(nn.Module):
 
         return ynn,cls
     
-class DINOv2(nn.Module):
-    def __init__(self):
-        super().__init__()
+class DINO(BaseNet):
+    def __init__(self,
+                 inputs:  dict[str, list[list[int|str]]],
+                 outputs: dict[str, dict[str, list[list[int|str]]]],
+                 layers:  dict[str, int|list[int]],
+                 network_type="dino"):
+        # Initialize the parent class
+        super(DINO, self).__init__(inputs,outputs,network_type)
 
-        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
-        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-        # self.vit = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+        # Load the DINO v2 model
+        # model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+        # model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+        # model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+        model = AutoModel.from_pretrained("facebook/dinov2-base")
+
+        # Class Variables        
+        self.networks = model
+
+    def forward(self, Xnn:dict[str,torch.Tensor]) -> dict[str, torch.Tensor]:
+
+        # Unpack inputs
+        xnn_vit = Xnn["rgb_image"]
+
+        # Inference the ViT
+        ynn_vit = self.networks(xnn_vit)
+
+        # Extract the patches and class token
+        pch = ynn_vit.last_hidden_state[:,1:,:].squeeze(0)
+        cls = ynn_vit.last_hidden_state[:,0,:]
+
+        # Reshape the patches back to (B,16,16,C)
+        pch = pch.view(xnn_vit.shape[0],16,16,-1)
+
+        # Create the output dictionary
+        Ynn = {"patches": pch, "class_token": cls}
         
-        model_name = "facebook/dinov2-base"  # Choose your desired DINO v2 variant
-        # processor = AutoProcessor.from_pretrained(model_name)
-        backbone = AutoModel.from_pretrained(model_name)
-        self.vit = backbone
-
-    def forward(self, xnn) -> tuple[torch.Tensor,torch.Tensor]:
-        outputs = self.vit(xnn)
-
-        ynn = outputs.last_hidden_state[:,1:,:].squeeze(0)
-        cls = outputs.last_hidden_state[:,0,:].squeeze(0)
-
-        return ynn,cls
+        return Ynn

@@ -3,8 +3,6 @@ import json
 import torch
 import math
 
-import sousvide.visualize.rich_utilities as ru
-
 from typing import Literal
 
 def get_max_length(io_idxs: dict[str,list[torch.Tensor]]) -> int:
@@ -152,8 +150,7 @@ def get_io_idxs(io_cfgs: dict[str, list[list[int|str]]]) -> dict[str,list[slice|
     return io_idxs
 
 def extract_io(io_srcs:dict[str,torch.Tensor],
-               io_idxs:None|dict[str,list[slice|torch.Tensor]],
-               use_tensor:bool=False,flatten:bool=False) -> dict[str,list[torch.Tensor]]:
+               io_idxs:None|dict[str,list[slice|torch.Tensor]]) -> dict[str,list[torch.Tensor]]:
     """
     Extract the inputs/outputs from the input/output tensor. The first dimension of the tensor is
     assumed to be the batch dimension and hence is left untouched.
@@ -173,20 +170,15 @@ def extract_io(io_srcs:dict[str,torch.Tensor],
             name_dt = name[:-1]
         else:
             name_dt = name
-
+            
         # Extract the input/output tensor
         data = io_srcs[name_dt]
         for dim, idx in enumerate(idxs):
-            if isinstance(idx,torch.Tensor):
-                idxs = idx
-            else:
-                raise ValueError(f"Invalid type in index_list[{dim}]: {type(idx)}. Must be slice or list.")
-
             # Move indices to the same device as the input/output tensor
-            idxs = idxs.to(data.device)
+            idx = idx.to(data.device)
 
             # Apply index selection along the current dimension
-            data = torch.index_select(data, dim+1, idxs)
+            data = torch.index_select(data, dim+1, idx)
 
         xnn[name] = data
 

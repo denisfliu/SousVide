@@ -23,5 +23,8 @@
     ],
     "feature_vector": [
         [ null ]
+    ],
+    "class_token": [
+        [ null ]
     ]
 }

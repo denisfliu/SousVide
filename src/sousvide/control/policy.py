@@ -65,20 +65,21 @@ class Policy(nn.Module):
         """
 
         # Initialize output variables
-        ynn,znn,Xpd = None,None,{}
+        ynn,pch,cls,Xpd = None,None,None,{}
 
         # Forward Pass through the networks
         for net_name,network in self.networks.items():
             # Extract the Network Inputs and Input Key
             xnn_idxs = network.io_idxs["xdp"]
             Xnn_net = nh.extract_io(Xnn,xnn_idxs)
-
+        
             # Update dictionary with forward pass through the network
             Ynn_net:dict = network(Xnn_net)
 
             # Extract policy outputs (first value of featNet/commNet)
             if net_name == "featNet":
-                znn = next(iter(Ynn_net.values()))
+                pch = Ynn_net["patches"]
+                cls = Ynn_net["class_token"]
             elif net_name == "commNet":
                 ynn = next(iter(Ynn_net.values()))
 
@@ -87,4 +88,4 @@ class Policy(nn.Module):
             # Update Xnn
             Xnn = Xnn|Ynn_net
             
-        return ynn,znn,Xpd
+        return ynn,pch,cls,Xpd

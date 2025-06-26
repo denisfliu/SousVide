@@ -149,10 +149,6 @@ def heatmap_overlay(heatmap:np.ndarray,image:np.ndarray,
     elif image.dtype == torch.float32:
         image = image.cpu().numpy()
 
-    # Normalize the heatmap
-    heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap))
-    heatmap = np.clip(heatmap, 0, 1)
-
     # Apply threshold if provided
     if threshold is not None:
         heatmap[heatmap < threshold] = 0

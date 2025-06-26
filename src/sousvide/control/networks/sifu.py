@@ -1,5 +1,4 @@
 import torch
-import sousvide.control.network_helper as nh
 
 from torch import nn
 from sousvide.control.networks.base_net import BaseNet

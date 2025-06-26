@@ -1,6 +1,0 @@
-nerfstudio==1.1.4
-transformers
--e ./FiGS/
--e ./FiGS/acados/interfaces/acados_template/
--e ./FiGS/Hierarchical-Localization/
--e .
