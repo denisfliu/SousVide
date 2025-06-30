@@ -99,6 +99,9 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
 
     # Run initial evaluation (if applicable)
     if deployment is not None:
+        # Unpack the deployment
+        course,scene,eval_method = deployment
+
         # Check if the checkpoint path exists
         ckpts_path  = os.path.join(student_path,"ckpts")
         if not os.path.exists(ckpts_path):
@@ -106,7 +109,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
 
         # Evaluate using a deployment
         with contextlib.redirect_stdout(io.StringIO()):
-            metric = df.deploy_roster(cohort_name,deployment,[student_name],mode="evaluate")
+            metric = df.deploy_roster(cohort_name,course,scene,eval_method,[student_name],mode="evaluate")
 
         # Initial checkpoint
         ckpt_name = network_name+"_ckpt"+str(0).zfill(3)
@@ -188,6 +191,9 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             
             # Evaluation (optional)
             if deployment is not None:
+                # Unpack the deployment
+                course,scene,eval_method = deployment
+                
                 # Save as a checkpoint
                 ckpt_name = network_name+"_ckpt"+str(ep+1).zfill(3)
                 ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
@@ -195,7 +201,7 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
 
                 # Evaluate using a deployment
                 with contextlib.redirect_stdout(io.StringIO()):
-                    metric = df.deploy_roster(cohort_name,deployment,[student_name],mode="evaluate")
+                    metric = df.deploy_roster(cohort_name,course,scene,eval_method,[student_name],mode="evaluate")
 
                 # Extract the metrics
                 Eval_tte.append((ep+1,metric[student_name]["TTE"]["mean"]))

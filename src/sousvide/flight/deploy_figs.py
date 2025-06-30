@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import os
 import figs.utilities.config_helper as ch
@@ -14,12 +13,11 @@ from typing import List,Literal,Union
 from figs.tsplines.min_time_snap import MinTimeSnap
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
-from figs.control.vehicle_rate_hmg import VehicleRateHMG
 from figs.dynamics.external_forces import ExternalForces
 from sousvide.control.pilot import Pilot
 
 def deploy_roster(cohort_name:str,
-                  deploy:tuple[str,str,str,str],
+                  course_name:str,gsplat_name:str,method_name:str,
                   roster:List[str],
                   expert_name:str="Viper",expert_cname:str=None,
                   bframe_name:str="carl",
@@ -47,7 +45,6 @@ def deploy_roster(cohort_name:str,
     """
 
     # Extract configs
-    cohort_name,course_name,gsplat_name,method_name = deploy
     course = ch.get_config(course_name,"courses")
     gsplat = ch.get_gsplat(gsplat_name)
     method = ch.get_config(method_name,"methods")
@@ -104,11 +101,8 @@ def deploy_roster(cohort_name:str,
         if pilot == "expert":
             controller = VehicleRateMPC(expert,expert_course)
         else:
-            if pilot == "Pitbull":
-                controller = VehicleRateHMG(pilot,tXUd[-1,1:11])
-            else:
-                controller = Pilot(cohort_name,pilot)
-                controller.set_mode('deploy')
+            controller = Pilot(cohort_name,pilot)
+            controller.set_mode('deploy')
 
         # Simulate trajectory across samples
         trajectories = []
