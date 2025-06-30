@@ -14,6 +14,7 @@ from typing import List,Literal,Union
 from figs.tsplines.min_time_snap import MinTimeSnap
 from figs.simulator import Simulator
 from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.control.vehicle_rate_hmg import VehicleRateHMG
 from figs.dynamics.external_forces import ExternalForces
 from sousvide.control.pilot import Pilot
 
@@ -103,8 +104,11 @@ def deploy_roster(cohort_name:str,
         if pilot == "expert":
             controller = VehicleRateMPC(expert,expert_course)
         else:
-            controller = Pilot(cohort_name,pilot)
-            controller.set_mode('deploy')
+            if pilot == "Pitbull":
+                controller = VehicleRateHMG(pilot,tXUd[-1,1:11])
+            else:
+                controller = Pilot(cohort_name,pilot)
+                controller.set_mode('deploy')
 
         # Simulate trajectory across samples
         trajectories = []
