@@ -1,6 +1,10 @@
+import numpy as np
+
 from rich import get_console
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn
 from rich.table import Table
+
+from typing import Tuple,List
 
 console = get_console()
 
@@ -16,8 +20,9 @@ def get_generation_progress() -> Progress:
         TextColumn("{task.description}"),
         BarColumn(),
         TextColumn("[bold green3] {task.completed:>2}/{task.total} {task.fields[units]}"),
-        TimeRemainingColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
+        auto_refresh=False,
     )
     return progress
 
@@ -34,8 +39,9 @@ def get_training_progress() -> Progress:
         TextColumn("{task.description} | [bold dark_green]Loss[/]: [dark_green]{task.fields[loss]:.4f}[/]"),
         BarColumn(),
         TextColumn("[bold green3] {task.completed:>2}/{task.total} {task.fields[units]}"),
-        TimeRemainingColumn(),
+        TimeRemainingColumn(elapsed_when_finished=True),
         console=console,
+        auto_refresh=False,
     )
     return progress
 
@@ -110,28 +116,36 @@ def update_deployment_table(table:Table,pilot:str,metrics:dict):
     return table
 
 def get_student_summary(student:str,
-                        Neps:int,Nd_tn:int,Nd_tt:int,
-                        Loss_tn:float,Loss_tt:float, Eval_tte, T_tn:float,
+                        Neps_tot:int,Nd_mean:Tuple[int],T_tn_tot:int,
+                        loss_tn:float,loss_tt:float,eval_tte:float|None,
                         Nln:int=70) -> str:
     
     # Compute the training time
-    hours = T_tn // 3600
-    minutes = (T_tn % 3600) // 60
-    seconds = T_tn % 60
+    hours = T_tn_tot // 3600
+    minutes = (T_tn_tot % 3600) // 60
+    seconds = T_tn_tot % 60
 
-    # Prepare the summary fields
-    student_field = f"Student: [bold cyan]{student}[/]".ljust(31)
-    tepochs_field = f"Epochs: {Neps}".ljust(13)
-    datsize_field = f"Data Size: {Nd_tn[-1]}/{Nd_tt[-1]}"
-    tt_time_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s".ljust(17)
-    tn_loss_field = f"[bold green]Train: {Loss_tn:.4f}[/]".ljust(13)
-    tt_loss_field = f"Test: {Loss_tt:.4f}".ljust(12)
-    ev_loss_field = f"[bold bright_green]Eval TTE: {Eval_tte:.2f}[/]".ljust(15)
+    # Summary First Line
+    student_field = f"Student: [bold cyan]{student}[/]"
+    tepochs_field = f"Epochs: {Neps_tot}"
+    datsize_field = f"Data Size: {Nd_mean[0]}/{Nd_mean[1]}"
 
-    summary = [
+    summary = (
             f"{'-' * Nln}\n"
-            f"{student_field} | {tepochs_field} | {datsize_field}\n"
-            f"{tt_time_field} | {tn_loss_field} | {tt_loss_field} | {ev_loss_field}"
-    ]
+            f"{student_field:<33} | {tepochs_field:<13} | {datsize_field:<40}\n"
+    )
 
+    # Summary Second Line
+    t_field = f"Time: {hours:.0f}h {minutes:.0f}m {seconds:.0f}s"
+    tn_field = f"[bold bright_green]Train: {loss_tn:.4f}[/]"
+    tt_field = f"Test: {loss_tt:.4f}"
+
+    if eval_tte is not None:
+        ev_field = f"[bold bright_green]Eval TTE: {eval_tte:.2f}[/]"
+        eval_field = (f"{t_field:<19} | {tn_field:<35} | {tt_field:<10} | {ev_field}\n")
+    else:
+        eval_field = (f"{t_field:<19} | {tn_field:<35} | {tt_field:<10}\n")
+
+    summary += eval_field            
+    
     return summary

@@ -1,15 +1,4 @@
 {
-    "objective": [
-        [
-            "dpx", "dpy", "dpz",
-            "vxi", "vyi", "vzi",
-            "qxi", "qyi", "qzi", "qwi",
-            "vxf", "vyf", "vzf",
-            "qxf", "qyf", "qzf", "qwf",
-            "T"
-        ]
-            
-    ],
     "current": [
         [
             "t",
@@ -22,12 +11,20 @@
         [ "nf","wx","wy","wz" ]
     ],
     "parameters": [
-        [ "m","kt" ]
+        [ "m", "kt", "c" ]
     ],
-    "histLat": [
-        [null]
+    "wrench": [
+        [ "fx", "fy", "fz", 
+          "tau_x", "tau_y", "tau_z" ]
     ],
-    "featLat": [
-        [null]
+    "resultant": [
+        [ "fx", "fy", "fz", 
+          "tau_x", "tau_y", "tau_z" ]
+    ],
+    "feature_vector": [
+        [ null ]
+    ],
+    "class_token": [
+        [ null ]
     ]
 }

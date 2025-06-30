@@ -1,5 +1,7 @@
+import numpy as np
 import os
 import time
+import shutil
 import contextlib
 import io
 import torch
@@ -8,20 +10,18 @@ import torch.optim as optim
 import sousvide.synthesize.observation_generator as og
 import sousvide.visualize.rich_utilities as ru
 
-from typing import List
 from torch.utils.data import DataLoader
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
 from sousvide.control.policy import Policy
 from sousvide.control.networks.base_net import BaseNet
+from sousvide.instruct.losses import *
 from sousvide.instruct.synthesized_data import *
 import sousvide.flight.deploy_figs as df
 
-def train_roster(cohort_name:str,roster:List[str],
-                 network_name:str,Neps:int,
-                 regen:bool=False,
-                 use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
-                 lim_sv:int=10,lr:float=1e-4,batch_size:int=64):
+def train_roster(cohort_name:str,roster:list[str],network_name:str,Neps:int,
+                 regen:bool=False,deployment:None|tuple[str,str,str]=None,
+                 lim_sv:int=50,lr:float=1e-4,batch_size:int=64):
     
     # Initialize the console variable
     console = ru.get_console()
@@ -44,18 +44,24 @@ def train_roster(cohort_name:str,roster:List[str],
 
             # Train the student
             train_student(cohort_name,student,network_name,Neps,
-                          use_deploy,deploy_method,
-                          student_bar,lim_sv,lr,batch_size)
+                          deployment,lim_sv,lr,batch_size,
+                          student_bar)
+            progress.refresh()
+
 
 def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
-                  use_deploy:Union[None,str]=None,deploy_method:str="eval_nominal",
-                  progress_bar:Tuple[Progress,int]=None,lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  deployment:None|tuple[str,str,str]=None,
+                  lim_sv:int=10,lr:float=1e-4,batch_size:int=64,
+                  progress_bar:tuple[Progress,int]=None
                   ) -> None:
-    
+
+    # Record the start time
+    start_time = time.time()
+
     # Pytorch Config
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
-    criterion = nn.MSELoss(reduction='mean')
+    criterion = LossFn()
 
     # Load the student
     student = Pilot(cohort_name,student_name)
@@ -77,7 +83,6 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
     # Some Useful Paths
     student_path = student.path
     losses_path  = os.path.join(student_path,"losses_"+network_name+".pt")
-    network_path = os.path.join(student_path,network_name+".pt")
 
     # Load loss log if it exists
     if os.path.exists(losses_path):
@@ -92,12 +97,33 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
         "Loss_tn": [], "Loss_tt": [], "Eval_tte": [],
     }
 
-    # Record the start time
-    start_time = time.time()
+    # Run initial evaluation (if applicable)
+    if deployment is not None:
+        # Unpack the deployment
+        course,scene,eval_method = deployment
 
+        # Check if the checkpoint path exists
+        ckpts_path  = os.path.join(student_path,"ckpts")
+        if not os.path.exists(ckpts_path):
+            os.makedirs(ckpts_path)
+
+        # Evaluate using a deployment
+        with contextlib.redirect_stdout(io.StringIO()):
+            metric = df.deploy_roster(cohort_name,course,scene,eval_method,[student_name],mode="evaluate")
+
+        # Initial checkpoint
+        ckpt_name = network_name+"_ckpt"+str(0).zfill(3)
+        ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
+        torch.save(network,ckpt_path)
+
+        # Extract the metrics
+        eval0 = (0,metric[student_name]["TTE"]["mean"])
+    else:
+        eval0 = []
+        
     # Training + Testing Loop
     Loss_tn,Loss_tt = [],[]
-    Eval_tte = []
+    Eval_tte = [eval0]
     for ep in range(Neps):
         # Get Observation Data Files (Paths)
         od_train_files,od_test_files = get_data_paths(cohort_name,student.name,network_name)
@@ -110,10 +136,10 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Training
-            for input,label in dataloader:
+            for xnn,ylb in dataloader:
                 # Forward Pass
-                prediction = network(*input)
-                loss = criterion(prediction,label)
+                ypd = network(xnn)
+                loss = criterion(ypd,ylb)
 
                 # Backward Pass
                 loss.backward()
@@ -121,8 +147,8 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
                 opt.zero_grad()
 
                 # Save loss logs
-                epLosses_tn.append(label.shape[0]*loss.item())
-                Ndata_tn += label.shape[0]
+                epLosses_tn.append(batch_size*loss.item())
+                Ndata_tn += batch_size
 
         # Testing
         epLosses_tt,Ndata_tt = [],0
@@ -132,25 +158,26 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last = False)
 
             # Testing
-            for input,label in dataloader:
+            for xnn,ylb in dataloader:
                 # Forward Pass
-                prediction = network(*input)
-                loss = criterion(prediction,label)
+                ypd = network(xnn)
+                loss = criterion(ypd,ylb)
 
                 # Save loss logs
-                epLosses_tt.append(label.shape[0]*loss.item())
-                Ndata_tt += label.shape[0]
+                epLosses_tt.append(batch_size*loss.item())
+                Ndata_tt += batch_size
 
         # Loss Diagnostics
         epLoss_tn = sum(epLosses_tn)/Ndata_tn
         epLoss_tt = sum(epLosses_tt)/Ndata_tt
-        Loss_tn.append(epLoss_tn)
-        Loss_tt.append(epLoss_tt)
+        Loss_tn.append((ep+1,epLoss_tn))
+        Loss_tt.append((ep+1,epLoss_tt))
         
         # Update the progress bar
         if progress_bar is not None:
             progress,student_task = progress_bar
             progress.update(student_task,loss=epLoss_tn,advance=1)
+            progress.refresh()
 
         # Save at intermediate steps and at the end
         if ((ep+1) % lim_sv == 0) or (ep+1==Neps):
@@ -158,24 +185,33 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             end_time = time.time()
             t_train = end_time - start_time
 
-            torch.save(network,network_path)
-
+            # Save the latest network
+            netw_path = os.path.join(student_path,network_name+".pt")
+            torch.save(network,netw_path)            
+            
             # Evaluation (optional)
-            if use_deploy is not None:
-                # Use test set course
-                eval_course = os.path.basename(os.path.dirname(od_test_files[0]))
+            if deployment is not None:
+                # Unpack the deployment
+                course,scene,eval_method = deployment
+                
+                # Save as a checkpoint
+                ckpt_name = network_name+"_ckpt"+str(ep+1).zfill(3)
+                ckpt_path = os.path.join(ckpts_path,ckpt_name+".pt")
+                torch.save(network,ckpt_path)
 
+                # Evaluate using a deployment
                 with contextlib.redirect_stdout(io.StringIO()):
-                    metric = df.deploy_roster(
-                        cohort_name,eval_course,
-                        use_deploy,deploy_method,
-                        [student_name],mode="evaluate")
-                Eval_tte.append([ep+1,metric[student_name]["TTE"]["mean"]])
-            else:
-                Eval_tte = None
+                    metric = df.deploy_roster(cohort_name,course,scene,eval_method,[student_name],mode="evaluate")
 
-            loss_entry["Loss_tn"],loss_entry["Loss_tt"] = Loss_tn,Loss_tt
-            loss_entry["Eval_tte"] = Eval_tte
+                # Extract the metrics
+                Eval_tte.append((ep+1,metric[student_name]["TTE"]["mean"]))
+            else:
+                Eval_tte.append([])
+
+            # Update the loss entry
+            loss_entry["Loss_tn"] = np.array(Loss_tn).T
+            loss_entry["Loss_tt"] = np.array(Loss_tt).T
+            loss_entry["Eval_tte"] = np.array(Eval_tte).T
             loss_entry["Nd_tn"],loss_entry["Nd_tt"] = Ndata_tn,Ndata_tt
             loss_entry["t_tn"],loss_entry["N_eps"] = t_train,ep+1
 
@@ -188,10 +224,30 @@ def train_student(cohort_name:str,student_name:str,network_name:str,Neps:int,
             
             torch.save(curr_losses_log,losses_path)
 
+    # Pick the checkpoint with the best evaluation metric
+    if deployment is not None:
+        # Get the best checkpoint
+        best_ckpt = min(Eval_tte,key=lambda x: x[1])[0]
+        best_ckpt = network_name+"_ckpt"+str(best_ckpt).zfill(3)
+        ckpt_path = os.path.join(ckpts_path,best_ckpt+".pt")
+
+        # Load the best checkpoint
+        best_network = torch.load(ckpt_path)
+
+        # Save the best network
+        network_path = os.path.join(student_path,network_name+".pt")
+        torch.save(best_network,network_path)
+
+        # Delete the checkpoints
+        shutil.rmtree(ckpts_path)
+
+        # Print the best checkpoint
+        ru.console.print(f"[bold green3]{student_name} > {network_name}[/] : Best checkpoint is {best_ckpt}.")
+
     # Cap off progress update
     progress.refresh()
 
-def get_network(policy:Policy,net_name:Union[str,List[str]]) -> BaseNet:
+def get_network(policy:Policy,net_name:str|list[str]) -> BaseNet:
     """
     Get the networks based on the list of network names.
 
@@ -206,9 +262,6 @@ def get_network(policy:Policy,net_name:Union[str,List[str]]) -> BaseNet:
     # Get the network
     network = policy.networks[net_name]
     
-    # Switch from network forward pass to label pass (if it exists)
-    network.use_fpass = False
-
     # Lock/Unlock the network
     network.train()
     for param in network.parameters():

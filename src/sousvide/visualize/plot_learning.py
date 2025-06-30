@@ -9,7 +9,8 @@ import sousvide.flight.flight_helper as fh
 
 from typing import List
 
-def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70):
+def plot_losses(cohort_name:str, roster:List[str], network_name:str,
+                Nln:int=70,use_log:bool=True):
     """
     Plot the losses for each student in the roster.
     """
@@ -23,98 +24,125 @@ def plot_losses(cohort_name:str, roster:List[str], network_name:str, Nln:int=70)
     cohort_path = os.path.join(workspace_path, "cohorts", cohort_name)
 
     # Compile the learning summary header
-    learning_summary = [
+    learning_summary = (
         f"{'=' * Nln}\n"
-        f"Cohort : [bold cyan]{cohort_name}[/]\n"
+        f"Cohort : [bold cyan]{cohort_name}[/]\t\t"
         f"Network: [bold cyan]{network_name}[/]\n"
-        f"{'=' * Nln}"]
-
-    # Create a figure and a set of subplots
-    fig, axs = plt.subplots(1, 3, figsize=(5, 3))
+        f"{'=' * Nln}\n")
 
     # Plot the losses for each student
-    for student_name in roster:
-        try:
-            student_path = os.path.join(cohort_path, "roster", student_name)
-            losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
-
+    student_data = {}
+    for student in roster:
+        # Load the losses for each student
+        student_path = os.path.join(cohort_path, "roster", student)
+        losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
+        if os.path.exists(losses_path):
             losses: dict = torch.load(losses_path)
-        except:
-            console.print(f"{'-' * Nln}\n"
-                          f"Student [bold cyan]{student_name}[/bold cyan] does not have a [bold cyan]{network_name}[/bold cyan].")
+        else:
+            student_summary = (
+                f"{'-' * Nln}\n"
+                f"Student [bold cyan]{student}[/] does not have a [bold cyan]{network_name}[/].\n"
+            )
+            learning_summary += student_summary
+
             continue
 
         # Gather plot data
-        Loss_tn, Loss_tt, Eval_tte, Neps = [], [], [], 0
-        Nd_tn, Nd_tt = [], []
-        T_tn = 0
+        Loss_tn, Loss_tt, Eval_tte = np.zeros((2,0)), np.zeros((2,0)), np.zeros((2,0))
+        Nd_tn, Nd_tt, T_tn = [], [], []
+        Neps_tot = 0
         for loss_data in losses.values():
-            # Add the loss data to the lists
-            Loss_tn.append(loss_data["Loss_tn"])
-            Loss_tt.append(loss_data["Loss_tt"])
+            # Extract the loss data
+            loss_tn,loss_tt = loss_data["Loss_tn"],loss_data["Loss_tt"]
+            if np.any(loss_data["Eval_tte"]):
+                eval_tte = loss_data["Eval_tte"]
+            else:
+                eval_tte = np.zeros((2,0))
 
-            # Add the evaluation data to the list, adjusting for the number of episodes
-            if loss_data["Eval_tte"] is not None:
-                Eval_tte.append(np.array(loss_data["Eval_tte"]))
+            # Update their epoch counts
+            loss_tn[0,:] += Neps_tot
+            loss_tt[0,:] += Neps_tot
+            eval_tte[0,:] += Neps_tot
 
-            # Update the total number of episodes and other metrics
-            Neps += loss_data["N_eps"]
+            # Append the loss data
+            Loss_tn = np.hstack((Loss_tn,loss_tn))
+            Loss_tt = np.hstack((Loss_tt,loss_tt))
+            Eval_tte = np.hstack((Eval_tte,eval_tte))
+
+            # Update the total number of epochs
+            Neps_tot += loss_data["N_eps"]
 
             # Append the number of data points for training and testing
             Nd_tn.append(loss_data["Nd_tn"])
             Nd_tt.append(loss_data["Nd_tt"])
 
             # Accumulate the training time
-            T_tn += loss_data["t_tn"]
+            T_tn.append(loss_data["t_tn"])
 
-        Loss_tn = np.hstack(Loss_tn)
-        Loss_tt = np.hstack(Loss_tt)
-        Eval_tte = np.vstack(Eval_tte)
+        # Compile the student plot data
+        student_data[student] = {
+            "Train": Loss_tn,
+            "Test": Loss_tt,
+            "TTE": Eval_tte if Eval_tte.size > 0 else None
+        }
 
-        # Compute the training time
+        # Generate student summary
+        Nd_mean = (np.mean(Nd_tn), np.mean(Nd_tt))
+        T_tn_tot = np.sum(T_tn)
+        loss_tn_f, loss_tt_f = Loss_tn[1,-1], Loss_tt[1,-1]
+        eval_tte_f = Eval_tte[1,-1] if Eval_tte.size > 0 else None
+
         student_summary = ru.get_student_summary(
-            student_name, Neps, Nd_tn, Nd_tt,
-            Loss_tn[-1], Loss_tt[-1], Eval_tte[-1,-1], T_tn, Nln
-        )
+            student, Neps_tot, Nd_mean, T_tn_tot,
+            loss_tn_f, loss_tt_f, eval_tte_f)
 
         learning_summary += student_summary
 
-        # Plot the losses
-        axs[0].plot(Loss_tn, label=student_name)
-        axs[1].plot(Loss_tt, label=student_name)
-
-        axs[2].plot(Eval_tte[:,0],Eval_tte[:,1], label=student_name)
-        axs[2].set_xlim(0, Neps)
-
-        axs[0].set_yscale('log')
-        axs[1].set_yscale('log')
-        axs[2].set_yscale('log')
-
     # Compile the learning summary footer
-    learning_summary += [f"{'=' * Nln}"]
+    learning_summary += (f"{'=' * Nln}")
 
     # Print the learning summary
-    console.print(*learning_summary)
+    console.print(learning_summary)
 
-    axs[0].set_title('Training')
-    axs[0].legend(loc='upper right')
+    # Plot the losses
+    titles = ["Training", "Testing"]
+    fig, axs = plt.subplots(1, 2, figsize=(6, 3))
+    
+    # Plot the losses
+    for student_name,data in student_data.items():
+        axs[0].plot(data["Train"][0,:],data["Train"][1,:], label=student_name)
+        axs[1].plot(data["Test"][0,:],data["Test"][1,:], label=student_name)
 
-    axs[1].set_title('Testing')
-    axs[1].legend(loc='upper right')
+    axs[0].set_ylabel('Loss')
+    for idx,ax in enumerate(axs):
+        ax.set_title(titles[idx])
+        ax.set_xlabel('Epochs')
+        ax.legend(loc='upper right', fontsize='small')
 
-    axs[2].set_title('TTE')
-    axs[2].legend(loc='upper right')
-
-    # Set common labels
-    for ax in axs[0:2]:
-        ax.set(xlabel='Epoch', ylabel='Loss (log scale)')
-    axs[2].set(xlabel='Epoch', ylabel='TTE (m)')
-
-    # Adjust layout for better spacing
+        if use_log:
+            ax.set_yscale('log')
+    
     plt.tight_layout()
-
-    # Show the plots
     plt.show(block=False)
+    
+    # Plot the TTE (if available)
+    if any([data["TTE"] is not None for data in student_data.values()]):
+        fig, ax = plt.subplots(figsize=(6, 3))
+        for student_name,data in student_data.items():
+            if data["TTE"] is not None:
+                ax.plot(data["TTE"][0,:],data["TTE"][1,:], label=student_name)
+
+        ax.set_ylabel('TTE (s)')
+        ax.set_xlabel('Epochs')
+        ax.set_yscale('log')
+        ax.set_xlim(0, data["Train"][0,-1])
+        ax.legend(loc='upper right', fontsize='small')
+
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='lower center', ncol=7, bbox_to_anchor=(0.5, -0.05))
+
+        plt.tight_layout()
+        plt.show(block=False)
 
 def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
     """
@@ -149,7 +177,7 @@ def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot
         # Plot the trajectories for each pilot
         if plot_show:
             console.print(f"Plotting trajectories for [bold cyan]{pilot}[/]...")
-            p3.RO_to_3D(Trajectories,plot_last=True)
+            p3.RO_to_3D(Trajectories,n=40,plot_last=True)
 
     # Print the summary table
     console.print(table)

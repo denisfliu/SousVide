@@ -5,14 +5,13 @@ import sousvide.control.network_helper as nh
 
 from typing import Dict,Union,List
 from sousvide.control.networks.base_net import BaseNet
-from sousvide.control.networks.mlp import MLP
 from sousvide.control.networks.sifu import SIFU
-from sousvide.control.networks.sifs import SIFS
-from sousvide.control.networks.sift import SIFT
-from sousvide.control.networks.sqfe import SqFE
-from sousvide.control.networks.hpcn import HPCN
-from sousvide.control.networks.svcn import SVCN
 from sousvide.control.networks.svnet import SVNet
+from sousvide.control.networks.dnnet import DNNet
+from sousvide.control.networks.feature_extractors import (
+    DINO
+)
+from sousvide.control.networks.pave import Pave
 
 def generate_network(
         net_config:Dict[str,Union[str,Dict[str,List[List[Union[str,int]]]]]],
@@ -31,7 +30,6 @@ def generate_network(
     Returns:
         network:    The generated network.
         nhy:        The maximum sequence length (if any).
-        Nz:         The number of features (if any).
     """
 
     # Some useful intermediate variables
@@ -43,31 +41,25 @@ def generate_network(
         network = torch.load(network_path)
     else:
         # Simple Networks
-        if network_type == "mlp":
-            network = MLP(**net_config)
+        if network_type == "simple":
+            network = BaseNet(**net_config)
         # Feature Extractors
-        elif network_type == "sqfe":
-            network = SqFE(**net_config)
+        elif network_type == "dino":
+            network = DINO(**net_config)
         # History Networks
         elif network_type == "sifu":
             network = SIFU(**net_config)
-        elif network_type == "sifs":
-            network = SIFS(**net_config)
-        elif network_type == "sift":
-            network = SIFT(**net_config)
         # Command Networks
-        elif network_type == "svcn":
-            network = SVCN(**net_config)
-        elif network_type == "hpcn":
-            network = HPCN(**net_config)
         elif network_type == "svnet":
             network = SVNet(**net_config)
+        elif network_type == "dnnet":
+            network = DNNet(**net_config)
+        elif network_type == "pave":
+            network = Pave(**net_config)
+        # Mixture of Experts Networks
         # Invalid Network Type
         else:
             raise ValueError(f"Invalid network type: {net_config['network_type']}")
     
-    # Check if network has feature,sequence requirments
-    nhy,Nz = network.nhy,network.Nznn
-    
-    return network,nhy,Nz
+    return network
     

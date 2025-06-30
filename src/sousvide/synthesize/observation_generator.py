@@ -2,17 +2,15 @@ import numpy as np
 import os
 import torch
 
-import sousvide.synthesize.compress_helper as ch
-import sousvide.synthesize.synthesize_helper as sh
+import sousvide.synthesize.data_compress_helper as dch
 import sousvide.control.network_helper as nh
 import sousvide.visualize.rich_utilities as ru
 
-from typing import Dict,Union,List,Tuple
 from rich.progress import Progress
 from sousvide.control.pilot import Pilot
 
-def generate_observation_data(cohort:str,roster:List[str],
-                              networks:Union[List[str],None]=None,
+def generate_observation_data(cohort:str,roster:list[str],
+                              networks:list[str]|None=None,
                               subsample:float=1.0) -> None:
     """
     Takes rollout data and generates observations for each pilot in the cohort. The observations are
@@ -88,20 +86,19 @@ def generate_observation_data(cohort:str,roster:List[str],
                 # Generate Observation Data
                 for idx_ds,(traj_data_file,imgs_data_file) in enumerate(zip(traj_data_files,imgs_data_files)):
                     # Load the Data
-                    traj_dataset = torch.load(os.path.join(traj_data_folder,traj_data_file))
-                    imgs_dataset = torch.load(os.path.join(imgs_data_folder,imgs_data_file))
+                    traj_ds = torch.load(os.path.join(traj_data_folder,traj_data_file))
+                    imgs_ds = torch.load(os.path.join(imgs_data_folder,imgs_data_file))
 
                     # Reset the observations progress bar
-                    progress.reset(obsv_task,description=obsv_desc1,total=len(traj_dataset))
+                    progress.reset(obsv_task,description=obsv_desc1,total=len(traj_ds))
                     obsv_bar = (progress,obsv_task)
     
                     # Extract the Observations
-                    observations,Nobs = generate_observations(pilot,
-                                                              traj_dataset,imgs_dataset,
-                                                              subsample,obsv_bar)
+                    observations,Nobs = generate_observations(pilot,traj_ds,imgs_ds,subsample,obsv_bar)
                     
                     # Update the observations progress bar
                     progress.update(obsv_task,description=obsv_desc2)
+                    progress.refresh()
 
                     # Save the observations
                     save_observations(cohort_path,course,pilot.name,observations,idx_ds,networks)
@@ -117,10 +114,10 @@ def generate_observation_data(cohort:str,roster:List[str],
                 progress.refresh()
 
 def generate_observations(pilot:Pilot,
-                          traj_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
-                          imgs_set:Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],
+                          traj_set:dict[str,str|int|dict[str,np.ndarray|float,str]],
+                          imgs_set:dict[str,str|int|dict[str,np.ndarray|float,str]],
                           subsample:float=1,
-                          progress_bar:Tuple[Progress,int]=None) -> Tuple[Dict[str,Union[str,int,Dict[str,Union[np.ndarray,float,str]]]],int]:
+                          progress_bar:tuple[Progress,int]=None) -> tuple[dict[str,str|int|dict[str,np.ndarray|float,str]],int]:
     
     # Initialize the observation data dictionary
     Observations = []
@@ -137,73 +134,77 @@ def generate_observations(pilot:Pilot,
     for traj_data,imgs_data in zip(traj_set,imgs_set):
         # Unpack data
         Tro,Xro = traj_data["Tro"],traj_data["Xro"]
-        Uro,Fro = traj_data["Uro"],traj_data["Fro"]
-        obj,Ndata = traj_data["obj"],traj_data["Ndata"]
+        Uro,Wro = traj_data["Uro"],traj_data["Wro"]
+        Wrs = traj_data["Wrs"]
+        Ndata = traj_data["Ndata"]
         rollout_id = traj_data["rollout_id"]
-        frame = traj_data["frame"]
-        params = [frame["mass"],frame["force_normalized"]]
+        frame,params = traj_data["frame"],traj_data["params"]
     
         # Decompress and extract the image data if compressed
-        Imgs = ch.decompress_data(imgs_data)["images"]
+        Imgs = dch.decompress_data(imgs_data)
+        Rgbs = Imgs["rgb"]
 
         # Check if images are raw or processed. Raw images are in (B,H,W,C) format while
         # processed images are in (B,C,H,W) format.
-        height,width = Imgs.shape[1],Imgs.shape[2]
+        height,width = Rgbs.shape[1],Rgbs.shape[2]
 
         if height == 224 and width == 224:
-            Imgs = np.transpose(Imgs, (0, 3, 1, 2))
+            Rgbs = np.transpose(Rgbs, (0, 3, 1, 2))
 
+        # Generate the observation data
         Xnn,Ynn = [],[]
-        unn_pr = np.zeros(4)
-        znn_cr = {key: torch.zeros(pilot.policy.Nznn[key]) for key in pilot.policy.Nznn.keys()}
+        upr = np.zeros(4)
         for k in range(Ndata):
             # Generate current state (with/without noise augmentation)
             if aug_type == "additive":
-                x_cr = Xro[:,k] + np.random.normal(aug_mean,aug_std)
+                xcr = Xro[k,:] + np.random.normal(aug_mean,aug_std)
             elif aug_type == "multiplicative":
-                x_cr = Xro[:,k] * (1 + np.random.normal(aug_mean,aug_std))
+                xcr = Xro[k,:] * (1 + np.random.normal(aug_mean,aug_std))
             else:
-                x_cr = Xro[:,k]
+                xcr = Xro[k,:]
 
             # Extract other data
-            t_cr = Tro[k]
-            tx_cr = np.hstack((Tro[k],Xro[:,k]))
-            unn_cr,f_cr = Uro[:,k],Fro[:,k]
-            img_cr = Imgs[k,:,:,:]
+            tcr,ucr = Tro[k],Uro[k,:]            
+            txcr = np.hstack((Tro[k],Xro[k,:]))
+            wro_cr = Wro[k,:]
+            wrs_cr = Wrs[k,:]
+            rgb_cr = Rgbs[k,:,:,:]
+            
+            # Rollout and collect the inputs
+            _,Dnn_cr,_ = pilot.ORCA(tcr,xcr,upr,rgb_cr,None,wro_cr)
 
             # Compute the source labels
             ynn_srcs = {
-                "current": torch.tensor(tx_cr,dtype=torch.float32).unsqueeze(0),
+                "current": torch.tensor(txcr,dtype=torch.float32).unsqueeze(0),
                 "parameters": torch.tensor(params,dtype=torch.float32).unsqueeze(0),
-                "forces": torch.tensor(f_cr,dtype=torch.float32).unsqueeze(0),
-                "command": torch.tensor(unn_cr,dtype=torch.float32).unsqueeze(0),
+                "wrench": torch.tensor(wro_cr,dtype=torch.float32).unsqueeze(0),
+                "resultant": torch.tensor(wrs_cr,dtype=torch.float32).unsqueeze(0),
+                "command": torch.tensor(ucr,dtype=torch.float32).unsqueeze(0),
+                "patches": pilot.pch_cr.cpu().clone(),
+                "class_token": pilot.cls_cr.cpu().clone()
             }
 
-            # Rollout and collect the inputs
-            _,znn_cr,xnn_cr,_ = pilot.OODA(unn_pr,t_cr,x_cr,obj,img_cr,znn_cr)
-
             # Extract the labels from source and trim inputs if they don't exist
-            ynn_cr = {}
-            for xnn_key in xnn_cr.keys():
-                ynn_idxs = pilot.policy.networks[xnn_key].label_indices
-
-                try:
-                    ynn_cr[xnn_key] = nh.extract_io(ynn_srcs,ynn_idxs,use_tensor=True)
-                except:
-                    ynn_cr[xnn_key] = None
+            Ynn_cr = {}
+            for dnn_key in Dnn_cr.keys():
+                # if dnn_key != "featNet":
+                ynn_idxs = pilot.policy.networks[dnn_key].io_idxs["ypd"]
+                ynn_cr = nh.extract_io(ynn_srcs,ynn_idxs)
+                Ynn_cr[dnn_key] = ynn_cr
 
             # Collect data conditioned on subsample step and history window
-            if k % nss == 0 and k >= pilot.policy.nhy:
-                Xnn.append(xnn_cr)
-                Ynn.append(ynn_cr)
+            if k % nss == 0:
+                Xnn.append(Dnn_cr)
+                Ynn.append(Ynn_cr)
 
             # Loop updates
-            unn_pr = unn_cr
+            upr = ucr
 
         # Update the progress bar
         if progress_bar is not None:
             progress,obsv_task = progress_bar
             progress.update(obsv_task,advance=1)
+            progress.refresh()
 
         # Store the observation data
         observations = {
@@ -222,8 +223,8 @@ def generate_observations(pilot:Pilot,
 
 def save_observations(cohort_name:str,course_name:str,
                       pilot_name:str,
-                      Observations:List[Dict[str,List[Dict[str,torch.Tensor]]]],
-                      idx_set:int,networks:Union[List[str],None]=None) -> None:
+                      Observations:list[dict[str,list[dict[str,torch.Tensor]]]],
+                      idx_set:int,networks:list[str]|None=None) -> None:
     
     """
     Saves the observation data to a .pt file in folders corresponding to pilot name within the course
@@ -252,7 +253,7 @@ def save_observations(cohort_name:str,course_name:str,
         if value is not None:
             if networks is None or key in networks:
                 syllabus.append(key)
-    
+
     for topic_name in syllabus:
         # Create the topic directory if it doesn't exist
         topic_path = os.path.join(cohort_path,"observation_data",pilot_name,topic_name,course_name)
@@ -260,13 +261,14 @@ def save_observations(cohort_name:str,course_name:str,
             os.makedirs(topic_path)
 
         # Save the observation data
-        data_path = os.path.join(topic_path,"observations"+str(idx_set).zfill(3)+".pt")
+        data_path = os.path.join(topic_path,"observations"+str(idx_set+1).zfill(3)+".pt")
 
         Xnn,Ynn = [],[]
         for observations in Observations:
             for xnn,ynn in zip(observations["Xnn"],observations["Ynn"]):
                 Xnn.append(xnn[topic_name])
                 Ynn.append(ynn[topic_name])
+
         data = {"Xnn":Xnn,"Ynn":Ynn,"Ndata":len(Ynn)}
         
         torch.save(data,data_path)

@@ -1,24 +1,25 @@
 {
-    "history": [
+    "dynamics": [
         [ null ],
         [
             "dt",
-            "px","py","pz",
-            "vx","vy","vz",
-            "qx","qy","qz","qw",
-            "nf","wx","wy","wz"
+            "px", "py", "pz",
+            "vx", "vy", "vz",
+            "qx", "qy", "qz", "qw",
+            "nf", "wx", "wy", "wz"
         ]
     ],
-    "features": [
+    "wrenches": [
         [ null ],
-        [ null ]
+        [ "fx", "fy", "fz", 
+          "tau_x", "tau_y", "tau_z" ]
     ],
-    "forces": [
+    "feature_arrays": [
         [ null ],
-        [ "fx","fy","fz" ]
+        [ null ], [ null ], [ null ]
     ],
-    "command_set": [
+    "fo_horizon": [
         [ null ],
-        [ "nf","wx","wy","wz" ]
+        [ "x", "y", "z", "psi" ]
     ]
 }

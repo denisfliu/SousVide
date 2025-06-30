@@ -1,89 +1,71 @@
 import torch
-import sousvide.control.network_helper as nh
 
 from torch import nn
-from typing import List,Dict,Union
 from sousvide.control.networks.base_net import BaseNet
 
 class SIFU(BaseNet):
     def __init__(self,
-                 inputs:  Dict[str, List[List[Union[int, str]]]],
-                 outputs: Dict[str, Dict[str, List[List[Union[int, str]]]]],
-                 layers:  Dict[str, Union[int,List[int]]],
-                 dropout=0.1,
+                 inputs:  dict[str, list[list[int|str]]],
+                 outputs: dict[str, dict[str, list[list[int|str]]]],
+                 layers:  dict[str, int|list[int]],
                  network_type="sifu"):
         """
         Initialize a Sequence Into Features (Unified) feedforward model.
 
-        Args:
-            inputs:         Inputs config.
-            outputs:        Outputs config.
-            layers:         Layers config.
-            dropout:        Dropout rate.
-            network_type:   Type of network.
+        The network takes history sequences and passes them through an
+        MLP to estimate drone parameters (mass and thrust coefficient)
+        during training. At runtime the network outputs the penultimate
+        layer as a feature vector.
 
-        Variables:
-            network_type:   Type of network.
-            input_indices:  Indices of the input.
-            fpass_indices:  Indices of the forward-pass output.
-            label_indices:  Indices of the label output.
-            networks:       Network layers.
-
-            use_fpass:      Use feature forward-pass.
-            frame_len:      Frame length flag with size as value.
         """
 
         # Initialize the parent class
-        super(SIFU, self).__init__()
+        super(SIFU, self).__init__(inputs,outputs,network_type)
 
-        # Extract the configs
-        input_indices = nh.get_io_idxs(inputs)
-        fpass_indices = nh.get_io_idxs(outputs["fpass"])
-        label_indices = nh.get_io_idxs(outputs["label"])
-
-        prev_size = nh.get_io_size(input_indices)
-        hidden_sizes = layers["hidden_sizes"] + [layers["histLat_size"]]
-        output_size = nh.get_io_size(label_indices)
+        # Unpack some useful variables
+        io_sizes = self.get_io_sizes()
+        dropout = layers["dropout"]
+        hidden_sizes = layers["hidden_sizes"]
 
         # Populate the network
+        prev_size = io_sizes["xdp"]["dynamics"]
+        mlp_sizes = hidden_sizes + [io_sizes["ydp"]["feature_vector"]]
+
         networks = []
-        for layer_size in hidden_sizes:
+        for layer_size in mlp_sizes:
             networks.append(nn.Linear(prev_size, layer_size))
             networks.append(nn.ReLU())
             networks.append(nn.Dropout(dropout))
 
             prev_size = layer_size
         
-        networks.append(nn.Linear(prev_size, output_size))
+        networks.append(nn.Linear(prev_size, io_sizes["ypd"]["parameters"]))
 
-        # Define the model
-        self.network_type = network_type
-        self.input_indices = input_indices
-        self.fpass_indices = fpass_indices
-        self.label_indices = label_indices
+        # Class Variables
         self.networks = nn.Sequential(*networks)
-        
-        self.use_fpass = True
-        self.nhy = len(inputs["history"][0])
 
-    def forward(self, xnn:torch.Tensor) -> torch.Tensor:
+    def forward(self, Xnn:dict[str,torch.Tensor]) -> dict[str, torch.Tensor]:
         """
         Forward pass of the model.
 
         Args:
-            xnn:    History input.
+            Xnn:    Input dictionary.
 
         Returns:
-            ynn:    Output tensor.
+            Ynn:    Output dictionary.
         """
 
+        # Unpack inputs
+        xnn_dyn = Xnn["dynamics"]
+
         # Flatten the input tensor
-        znn = torch.flatten(xnn, start_dim=-2)
+        xnn = torch.flatten(xnn_dyn, start_dim=-2)
 
         # Forward pass
-        if self.use_fpass == True:
-            ynn = self.networks[:-1](znn)
-        else:
-            ynn = self.networks(znn)
-        
-        return ynn
+        ydp = self.networks[:-1](xnn)
+        ypd = self.networks[-1](ydp)
+
+        # Create the output dictionary
+        Ynn = {"feature_vector": ydp,"parameters": ypd}
+
+        return Ynn

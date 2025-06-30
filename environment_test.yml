@@ -1,4 +1,4 @@
-name: kitchen
+name: test
 channels:
   - pytorch      # Specific channel for PyTorch packages
   - nvidia/label/cuda-11.8.0  # For NVIDIA-specific CUDA tools
