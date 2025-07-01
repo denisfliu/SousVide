@@ -1,0 +1,30 @@
+{
+    "current": [
+        [
+            "t",
+            "px","py","pz",
+            "vx","vy","vz",
+            "qx","qy","qz","qw"
+        ]
+    ],
+    "command": [
+        [ "nf","wx","wy","wz" ]
+    ],
+    "parameters": [
+        [ "m", "kt", "c" ]
+    ],
+    "wrench": [
+        [ "fx", "fy", "fz", 
+          "tau_x", "tau_y", "tau_z" ]
+    ],
+    "resultant": [
+        [ "fx", "fy", "fz", 
+          "tau_x", "tau_y", "tau_z" ]
+    ],
+    "feature_vector": [
+        [ null ]
+    ],
+    "class_token": [
+        [ null ]
+    ]
+}

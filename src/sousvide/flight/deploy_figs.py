@@ -1,137 +1,215 @@
-import numpy as np
 import torch
 import os
-import json
-from typing import List, Tuple
-
-import sousvide.visualize.plot_synthesize as ps
-
-from sousvide.control.pilot import Pilot
-from figs.control.vehicle_rate_mpc import VehicleRateMPC
-from figs.tsplines import min_snap as ms
-import sousvide.synthesize.synthesize_helper as sh
-import sousvide.synthesize.rollout_generator as rg
-import sousvide.visualize.record_flight as rf
-from torchvision.io import write_video
-from torchvision.transforms import Resize
-from figs.simulator import Simulator
-import figs.utilities.trajectory_helper as th
-from figs.dynamics.model_specifications import generate_specifications
+import figs.utilities.config_helper as ch
+import figs.utilities.transform_helper as th
 import figs.visualize.generate_videos as gv
+import sousvide.synthesize.synthesize_helper as sh
+import sousvide.utilities.sousvide_utilities as svu
+import sousvide.visualize.record_flight as rf
+import sousvide.visualize.rich_utilities as ru
+import sousvide.flight.flight_helper as fh
 
-def simulate_roster(cohort_name:str,method_name:str,
-                    scene_name:str,course_name:str,
-                    roster:List[str],
-                    use_flight_recorder:bool=False):
+from typing import List,Literal,Union
+from figs.tsplines.min_time_snap import MinTimeSnap
+from figs.simulator import Simulator
+from figs.control.vehicle_rate_mpc import VehicleRateMPC
+from figs.dynamics.external_forces import ExternalForces
+from sousvide.control.pilot import Pilot
 
-    # Some useful path(s)
-    workspace_path = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    output_path = os.path.join(workspace_path,"cohorts",cohort_name,"output")
+def deploy_roster(cohort_name:str,
+                  course_name:str,gsplat_name:str,method_name:str,
+                  roster:List[str],
+                  expert_name:str="Viper",expert_cname:str=None,
+                  bframe_name:str="carl",
+                  mode:Literal["evaluate","visualize","generate"]="evaluate",show_table:bool=False) -> Union[None,dict]:
+    """"
+    Simulate a roster of pilots on a given course within a given scene on
+    variations of a specific drone frame using a specified method. This is
+    a close mirror to generate_rollout_data with a few key differences; it
+    computes flight performance metrics (Trajectory Tracking Error [TTE] 
+    and Proximity Percentile [PP]) across multiple rollouts and it produces
+    video output for the last trajectory for each pilot. 
+    
+    Args:
+        cohort_name:    Name of the cohort to be used for the simulation.
+        deploy:         (course_name,gsplat_name,method_name) tuple.
+        roster:         List of pilot names to simulate.
+        expert_name:    Name of the expert pilot to be used for the simulation (default is Viper).
+        expert_cname:   Name of the course to be used for the expert pilot (default is None).
+        bframe_name:    Base frame for flying the trajectories (default is carl).
+        mode:           Mode of operation for the simulation, can be "evaluate", "visualize", or "generate".
+        show_table:     Boolean to print the summary table of flight metrics.
 
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
+    Returns:
+        None:           The function saves the simulation data and video to disk.
+    """
 
     # Extract configs
-    method_path = os.path.join(workspace_path,"configs","method",method_name+".json")
-    with open(method_path) as json_file:
-        method_config = json.load(json_file)
-
-    test_set_config = method_config["test_set"]
-    sample_set_config = method_config["sample_set"]
-
-    base_policy_name = sample_set_config["policy"]
-    base_frame_name = sample_set_config["frame"]
-
-    rollout_name = test_set_config["rollout"]
-    Nrep = test_set_config["reps"]
-    trajectory_set_config = test_set_config["trajectory_set"]
-    frame_set_config = test_set_config["frame_set"]
-
-    # Compute simulation variables
-    Trep = np.zeros(Nrep)
-
-    frame_path  = os.path.join(workspace_path,"configs","frame",base_frame_name+".json")
-    with open(frame_path) as json_file:
-        base_frame_config = json.load(json_file)  
+    course = ch.get_config(course_name,"courses")
+    gsplat = ch.get_gsplat(gsplat_name)
+    method = ch.get_config(method_name,"methods")
+    expert = ch.get_config(expert_name,"pilots")
+    bframe = ch.get_config(bframe_name,"frames")
     
-    base_frame_specs = generate_specifications(base_frame_config)
-
-    # Add Expert to Roster
-    roster = ["expert"]+roster
-
-    # Initialize simulator for scene
-    sim = Simulator(scene_name,rollout_name)
-
-    # Load course_config
-    course_path = os.path.join(workspace_path,"configs","course",course_name+".json")
-    with open(course_path) as json_file:
-        course_config = json.load(json_file)
-
-    # Compute ideal trajectory spline
-    output = ms.solve(course_config)
-    if output is not False:
-        Tpi,CPi = output
+    if expert_cname is not None:
+        expert_course = ch.get_config(expert_cname,"courses")
     else:
-        raise ValueError("Desired trajectory not feasible. Aborting.")
+        expert_course = course
 
-    # Generate sample variables
-    Frames = rg.generate_frames(Trep,base_frame_config,frame_set_config)        
-    Perturbations  = rg.generate_perturbations(Trep,Tpi,CPi,trajectory_set_config)
+    # Unpack some stuff
+    m_bs,kt_bs = bframe["mass"],bframe["motor_thrust_coeff"]
+    kT,use_l2_time = expert["plan"]["kT"],expert["plan"]["use_l2_time"]
+    hz = expert["track"]["hz"]
     
-    # Simulate samples across roster
-    for pilot_name in roster:
+    # Compute the desired variables
+    mts = MinTimeSnap(course["waypoints"],hz,kT,use_l2_time)
+    fex = ExternalForces(course["forces"])
+
+    Tsd,FOd = mts.get_desired_trajectory()
+    tXUd = th.TsFO_to_tXU(Tsd,FOd,m_bs,kt_bs,fex)
+
+    # Get the batch of sample start times
+    t0,tf = Tsd[0],Tsd[-1]
+    dt_ro = method["duration"] or tf-t0
+    rate = method["rate"] or 1/dt_ro
+    reps = method["reps"] or 1
+
+    Tsp_bt = sh.compute_Tsp_batches(t0,tf,dt_ro,rate,reps)[0]
+
+    # Generate sample frames and perturbations
+    Frames = sh.generate_frames(
+        Tsp_bt, bframe, method["randomization"]["parameters"]
+    )
+    Perturbations = sh.generate_perturbations(
+        Tsp_bt, tXUd, method["randomization"]["initial"]
+    )
+
+    # Initialize the rich variables
+    console = ru.get_console()
+    table = ru.get_deployment_table()
+
+    # Simulate samples across expert+roster
+    crew = ["expert"]+roster
+    
+    # Initialize the simulator
+    simulator = Simulator(gsplat,method)
+    simulator.update_forces(course["forces"])
+
+    Metrics = {}
+    for pilot in crew:
         # Load Pilot
-        if pilot_name == "expert":
-            policy = VehicleRateMPC(course_name,base_policy_name,base_frame_name,pilot_name)
+        if pilot == "expert":
+            controller = VehicleRateMPC(expert,expert_course)
         else:
-            policy = Pilot(cohort_name,pilot_name)
-            policy.set_mode('deploy')
-
-        # Save paths
-        trajectories_path = os.path.join(output_path,"sim_"+course_name+"_"+policy.name+".pt")
-        video_path = os.path.join(output_path, "sim_"+course_name+"_"+policy.name+".mp4")
-
-        # Compute ideal trajectory variables
-        tXUd = th.TS_to_tXU(Tpi,CPi,base_frame_specs,policy.hz)
-        obj = sh.ts_to_obj(Tpi,CPi)
+            controller = Pilot(cohort_name,pilot)
+            controller.set_mode('deploy')
 
         # Simulate trajectory across samples
         trajectories = []
         for idx,(frame,perturbation) in enumerate(zip(Frames,Perturbations)):
-            # Load Frame
-            sim.load_frame(frame)
+            # Unpack rollout variables
+            t0,x0 = perturbation["t0"],perturbation["x0"]
+            tf = t0 + dt_ro
+
+            # Update the simulation variables
+            simulator.update_frame(frame)
+
+            # Update pilot
+            controller.reset_memory(x0)
+            controller.update_frame(frame)
 
             # Simulate Trajectory
-            Tro,Xro,Uro,Iro,Tsol,Adv = sim.simulate(
-                policy,perturbation["t0"],tXUd[0,-1],perturbation["x0"],obj)
+            Tro,Xro,Uro,Wro,Rgb,Dpt,Tsol = simulator.simulate(controller,t0,tf,x0)
+
+            # Compute Additional Variables
+            prms = svu.compute_prms(frame)
+            Wrs = svu.compute_Wrs(Xro,Uro,Wro,frame,bframe)
+            FOro = svu.compute_FOro(Tro,Xro,Uro,Wro,frame)
 
             # Save Trajectory
             trajectory = {
-                "Tro":Tro,"Xro":Xro,"Uro":Uro,
-                "tXUd":tXUd,"obj":obj,"Ndata":Uro.shape[1],"Tsol":Tsol,"Adv":Adv,
-                "rollout_id":method_name+"_"+str(idx).zfill(5),
-                "course":course_name,
+                "Tro":Tro,"Xro":Xro,"Uro":Uro,"Wro":Wro,
+                "params":prms,"Wrs":Wrs,"FOro":FOro,
+                "tXUd":tXUd,"Ndata":Uro.shape[0],"Tsol":Tsol,
+                "rollout_id":"sim"+str(0).zfill(3)+str(idx).zfill(3),
                 "frame":frame}
+            
             trajectories.append(trajectory)
 
-        # Print some diagnostics
-        print("Simulated",len(Frames),"rollouts for",policy.name)
+        # Compile deployment data
+        deployment_data = {
+            "trajectories":trajectories,
+            "video": {"hz":controller.hz,"rgb":Rgb,"depth":Dpt},
+        }
 
-        # Save simulations
-        print("Saving simulation data...")
-
-        # Save all trajectory data
-        torch.save(trajectories,trajectories_path)
+        # Update the metrics table
+        metrics = fh.compute_flight_metrics(trajectories)
+        table = ru.update_deployment_table(table,pilot,metrics)
         
+        # Update the metrics dictionary
+        Metrics[pilot] = metrics
+
         # Save last trajectory as video/flight recorder
-        if use_flight_recorder:
-            # Save Flight Recorder class to mirror real-world deployment
-            flight_record = rf.FlightRecorder(
-                Xro.shape[0],Uro.shape[0],
-                20,tXUd[0,-1],[360,640,3],obj,cohort_name,course_name,policy.name)
-            flight_record.simulation_import(Iro,Tro,Xro,Uro,tXUd,Tsol,Adv)
-            flight_record.save()
-        else:
-            # Save video on last trajectory
-            gv.images_to_mp4(Iro,video_path, policy.hz)       # Save the video
+        if mode == "visualize":
+            save_deployments(cohort_name,course_name,pilot,deployment_data,
+                             is_generate=False)
+        elif mode == "generate":
+            save_deployments(cohort_name,course_name,pilot,deployment_data,
+                             is_generate=True)
+        elif mode == "evaluate":
+            pass  # No action needed for evaluate mode
+            
+    # Print the summary table
+    if show_table:
+        console.print(table)
+    
+    if mode == "evaluate":
+        return Metrics
+    else:
+        return None
+
+def save_deployments(cohort_name:str,course_name:str,pilot_name:str,deployment_data:dict,
+                     is_generate:bool=False) -> None:
+    
+    # Some useful path(s)
+    workspace_path = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    deployment_path = os.path.join(workspace_path,"cohorts",cohort_name,"deployment_data")
+    
+    # Create the deployment directory if it doesn't exist
+    if not os.path.exists(deployment_path):
+        os.makedirs(deployment_path)
+
+    # Save the Data
+    if is_generate:
+        # TODO: Implement the generation of flight recorder data
+        pass
+        # for trajectory in deployment_data["trajectories"]:
+        #     Tro:np.ndarray = trajectory["Tro"]
+        #     Xro:np.ndarray = trajectory["Xro"]
+        #     Uro:np.ndarray = trajectory["Uro"]
+        #     Tsol:np.ndarray = trajectory["Tsol"]
+        #     tXUd,obj = trajectory["tXUd"],trajectory["obj"]
+        #     Adv = None
+
+        #     hz = int(1/(Tro[1]-Tro[0]))
+        #     flight_record = rf.FlightRecorder(
+        #         Xro.shape[0],Uro.shape[0],
+        #         hz,tXUd[0,-1],[360,640,3],obj,cohort_name,course_name,pilot_name)
+        #     flight_record.simulation_import(images,Tro,Xro,Uro,tXUd,Tsol,Adv)
+        #     flight_record.save()        
+    else:
+        data_name = "sim_"+course_name+"_"+pilot_name
+        trajectories = deployment_data["trajectories"]
+        rgbs = deployment_data["video"]["rgb"]
+        dpts = deployment_data["video"]["depth"]
+        hz = deployment_data["video"]["hz"]
+        
+        trajectories_path = os.path.join(deployment_path,data_name+".pt")
+
+        rgb_path = os.path.join(deployment_path,data_name+"_rgb.mp4")
+        dpt_path = os.path.join(deployment_path,data_name+"_dpt.mp4")
+
+        torch.save(trajectories,trajectories_path)
+        gv.images_to_mp4(rgbs,rgb_path, hz)
+        gv.images_to_mp4(dpts,dpt_path, hz)
