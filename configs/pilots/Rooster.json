@@ -28,25 +28,24 @@
                 "hidden_sizes": [64, 32]
             }
         },
-        "commNet": {
-            "network_type": "svnet",
+        "featNet": {
+            "network_type": "dino",
             "inputs": {
                 "rgb_image": [
                     224, 224, ["r", "g", "b"]
-                ],
-                "current1": [
-                    [
-                        "pz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
-                "current2": [
-                    [
-                        "pz",
-                        "vx", "vy", "vz",
-                        "qx", "qy", "qz", "qw"
-                    ]
-                ],
+                ]
+            },
+            "outputs": {
+                "patches": [ 16, 16, 768 ],
+                "class_token": [ 768 ]
+            },
+            "layers": {
+            }
+        },
+        "commNet": {
+            "network_type": "dnnet",
+            "inputs": {
+                "patches": [ 16, 16, 768 ],
                 "feature_vector": [ 8 ]
             },
             "outputs": {
@@ -55,10 +54,6 @@
                 ]
             },
             "layers": {
-                "dropout": 0.1,
-                "sqnet_size": 1000,
-                "hidden_sizes": [512, 256, 128, 100, 100],
-                "cmd_aug_layer": 2
             }
         }
     },

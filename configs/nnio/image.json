@@ -1,0 +1,14 @@
+{
+    "rgb_image": [
+        [ null ], [ null ], [ "r", "g", "b" ]
+    ],
+    "depth_image": [
+        [ null ], [ null ], [ "d" ]
+    ],
+    "feature_array": [
+        [ null ], [ null ], [ null ]
+    ],
+    "patches": [
+        [ null ], [ null ], [ null ]
+    ]
+}
