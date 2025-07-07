@@ -1,65 +1,73 @@
 {
-    "type": "SVNetDirect",
-    "networks": [
-        {
-            "type": "DirectHistoryEncoder",
-            "delta": [
-                0,
-                1,  2,  3,
-                4,  5,  6,
-                7,  8,  9, 10,
-                11, 12, 13, 14
-            ],
-            "frames": [
-                0,  1,  2,  3,  4
-            ],
-            "hidden_sizes": [ 64, 32, 8],
-            "output_size": 2
+    "hz": 20,
+    "networks": {
+        "histNet": {
+            "network_type": "sifu",
+            "inputs": {
+                "dynamics": [
+                    [ 0, 1, 2, 3, 4],
+                    [
+                        "dt",
+                        "qx", "qy", "qz", "qw",
+                        "nf", "wx", "wy", "wz"
+                    ]
+                ]
+            },
+            "outputs": {
+                "prediction": {
+                    "parameters": [ ["m", "kt"] ]
+                },
+                "deployment": {
+                    "feature_vector": [ 8 ]
+                }
+            },
+            "layers": {
+                "dropout": 0.1,
+                "hidden_sizes": [64, 32]
+            }
         },
-        {
-            "type": "VisionMLP",
-            "CNN": "SqueezeNet1_1",
-            "state": [
-                3,
-                7,  8,  9, 10
-            ],
-            "state_layer": 0,
-            "hidden_sizes": [512,256],
-            "output_size": 128
-        },
-        {
-            "type": "CommandSV",
-            "state":[
-                3,
-                4,  5,  6,
-                7,  8,  9, 10
-            ],
-            "objective": [
-                0,
-                1,  2,  3,
-                4,  5,  6,
-                7,  8,  9,
-                10, 11, 12, 13,
-                14, 15, 16, 17
-            ],
-            "hidden_sizes": [100,100],
-            "output_size": 4
+        "commNet": {
+            "network_type": "svnet",
+            "inputs": {
+                "rgb_image": [
+                    224, 224, ["r", "g", "b"]
+                ],
+                "current1": [
+                    [
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "current2": [
+                    [
+                        "qx", "qy", "qz", "qw"
+                    ]
+                ],
+                "feature_vector": [ 8 ]
+            },
+            "outputs": {
+                "command": [
+                    ["nf", "wx", "wy", "wz"]
+                ]
+            },
+            "layers": {
+                "dropout": 0.1,
+                "sqnet_size": 1000,
+                "hidden_sizes": [512, 256, 128, 100, 100],
+                "cmd_aug_layer": 2
+            }
         }
-    ],
-    "advisor": {
-        "type": null
     },
     "data_augmentation": {
         "type": "additive",
         "mean": [
-            0.000,  0.000,  0.000,
-            0.000,  0.000,  0.000,
-            0.000,  0.000,  0.000,  0.000
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
         ],
         "std": [
-            0.000,  0.000,  0.000,
-            0.000,  0.000,  0.000,
-            0.000,  0.000,  0.000,  0.000
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000,
+            0.000, 0.000, 0.000, 0.000
         ]
     }
 }

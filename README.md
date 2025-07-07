@@ -28,27 +28,22 @@ cd <repository-path>/SousVide/
 
 # Create and activate
 conda env create -f environment_x86.yml
-conda activate sv-env
+conda activate kitchen
 ```
-4) Download Example GSplats
+5) Download Example GSplats
 ```
 # Navigate to gsplats parent folder
 cd <repository-path>/SousVide/
 
-# Use gdown to download
-gdown --folder https://drive.google.com/drive/folders/1Q3Jxt08MUev_jWzHjpdltze7X4VArsvA?usp=drive_link --remaining-ok
-
-# Alternatively, you can download the zip-ed file below and unpack the contents (capture and workspace) into the gsplats folder
+# Download the zip-ed file below and unpack the contents (capture and workspace) into the gsplats folder
 https://drive.google.com/file/d/1kW5dzsfD3rbRA3RIQDyJPG6_UJaO9ALP/view
 ```
 
 ## Run SOUS VIDE Examples
 Check out the notebook examples in the notebooks folder:
   1. <b>figs_examples</b>: Example code for generating GSplats and executing trajectories within them (using FiGS).
-  2. <b>sv_shakedown</b>: Use this notebook to verify all components before running other SV notebooks. It does not produce a usable policy
-  3. <b>sv_robustness</b>: Produces the policies used in Section VI.A and VI.B.
-  4. <b>sv_extended</b>: Produces the policy for the extended trajectory in Section VI.C.
-  5. <b>sv_cluttered</b>: Produces the policy for the cluttered environment trajectory in Section VI.C.
+  2. <b>sous_vide_examples</b>: Use this notebook to try out two of the policies generated in the paper.
 
-## [COMING SOON: 04/25] Deploy SOUS VIDE in the Real World
+
+## [COMING SOON: Oct 2025] Deploy SOUS VIDE in the Real World
 Deploy SOUS VIDE policies on an [MSL Drone](https://github.com/StanfordMSL/TrajBridge/wiki/3.-Drone-Hardware). Tutorial and code coming soon!

@@ -1,0 +1,23 @@
+{
+    "duration": 2.0,
+    "reps": 3,
+    "rate": 3,
+    "tol_select": 5e-2,
+    "randomization": {
+        "parameters": [
+            0.50, 2.10
+        ],
+        "initial": [
+            0.20, 0.20, 0.20,
+            0.20, 0.20, 0.20,
+            0.10, 0.10, 0.10, 0.10
+        ]
+    },
+    "rollout": {
+        "frequency": 100,
+        "noise": {
+            "model": null,
+            "sensor": null
+        }
+    }
+}

@@ -1,152 +1,183 @@
-from cv2 import mean
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import List, Literal
 import os
 import torch
-import sousvide.visualize.plot_synthesize as ps
-from tabulate import tabulate
 
-def plot_losses(cohort_name:str,roster:List[str],network:Literal["Parameter","Odometry","Commander"]):
+import sousvide.visualize.plot_3D as p3
+import sousvide.visualize.rich_utilities as ru
+import sousvide.flight.flight_helper as fh
+
+from typing import List
+
+def plot_losses(cohort_name:str, roster:List[str], network_name:str,
+                Nln:int=70,use_log:bool=True):
     """
     Plot the losses for each student in the roster.
     """
 
-    # # Clear all plots
-    # plt.close('all')
+    # Initialize the rich variables
+    console = ru.get_console()
 
     # Some useful paths
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    cohort_path = os.path.join(workspace_path,"cohorts",cohort_name)
+    cohort_path = os.path.join(workspace_path, "cohorts", cohort_name)
 
-    # Print some overall stuff
-    print("=====================================================")
-    print("Network Type: ",network)
-    print("Cohort:  ",cohort_name)
+    # Compile the learning summary header
+    learning_summary = (
+        f"{'=' * Nln}\n"
+        f"Cohort : [bold cyan]{cohort_name}[/]\t\t"
+        f"Network: [bold cyan]{network_name}[/]\n"
+        f"{'=' * Nln}\n")
 
-    # Plot Losses
-    fig, axs = plt.subplots(1, 2, figsize=(5, 3))
+    # Plot the losses for each student
+    student_data = {}
+    for student in roster:
+        # Load the losses for each student
+        student_path = os.path.join(cohort_path, "roster", student)
+        losses_path = os.path.join(student_path, f"losses_{network_name}.pt")
+        if os.path.exists(losses_path):
+            losses: dict = torch.load(losses_path)
+        else:
+            student_summary = (
+                f"{'-' * Nln}\n"
+                f"Student [bold cyan]{student}[/] does not have a [bold cyan]{network_name}[/].\n"
+            )
+            learning_summary += student_summary
 
-    labels = []
-    for student_name in roster:
-        try:
-            student_path = os.path.join(cohort_path,"roster",student_name)
-            losses_path = os.path.join(student_path,"losses_"+network+".pt")
-
-            losses = torch.load(losses_path)
-            labels.append(student_name)
-        except:
-            print("-----------------------------------------------------")
-            print("No",network,"network found for",student_name)
-            print("-----------------------------------------------------")
             continue
-        
-        if "Neps" in losses.keys():
-            print("-----------------------------------------------------")
-            print("Student:",student_name)
-            print("Epochs :",sum(losses["Neps"]))
 
-            if len(set(losses["Nspl"])) == 1:
-                print("Samples:", losses["Nspl"][0])
+        # Gather plot data
+        Loss_tn, Loss_tt, Eval_tte = np.zeros((2,0)), np.zeros((2,0)), np.zeros((2,0))
+        Nd_tn, Nd_tt, T_tn = [], [], []
+        Neps_tot = 0
+        for loss_data in losses.values():
+            # Extract the loss data
+            loss_tn,loss_tt = loss_data["Loss_tn"],loss_data["Loss_tt"]
+            if np.any(loss_data["Eval_tte"]):
+                eval_tte = loss_data["Eval_tte"]
             else:
-                print("Samples:", losses["Nspl"])
+                eval_tte = np.zeros((2,0))
 
-            hours = sum(losses["t_train"]) // 3600
-            minutes = (sum(losses["t_train"]) % 3600) // 60
-            seconds = np.around(sum(losses["t_train"]) % 60,1)
-            print(f"t_train: {hours} hour(s), {minutes} minute(s), {seconds} second(s)")
-            # print("t_train: ",losses["t_train"])
+            # Update their epoch counts
+            loss_tn[0,:] += Neps_tot
+            loss_tt[0,:] += Neps_tot
+            eval_tte[0,:] += Neps_tot
 
-        loss_train = np.hstack(losses["train"])
-        loss_test = np.hstack(losses["test"])
-        axs[0].plot(loss_train)
-        axs[0].set_title('Training Loss')
+            # Append the loss data
+            Loss_tn = np.hstack((Loss_tn,loss_tn))
+            Loss_tt = np.hstack((Loss_tt,loss_tt))
+            Eval_tte = np.hstack((Eval_tte,eval_tte))
 
-        axs[1].plot(loss_test)
-        axs[1].set_title('Testing Loss')
+            # Update the total number of epochs
+            Neps_tot += loss_data["N_eps"]
 
-    # Set common labels
-    for ax in axs.flat:
-        ax.set(xlabel='Epoch', ylabel='Loss')
+            # Append the number of data points for training and testing
+            Nd_tn.append(loss_data["Nd_tn"])
+            Nd_tt.append(loss_data["Nd_tt"])
 
-    # Add Legend
-    fig.legend(labels, loc='upper right')
+            # Accumulate the training time
+            T_tn.append(loss_data["t_tn"])
 
-    # # Set the y-axis limits
-    # axs[0].set_ylim([0, 0.06])
-    # axs[1].set_ylim([0, 0.06])
+        # Compile the student plot data
+        student_data[student] = {
+            "Train": Loss_tn,
+            "Test": Loss_tt,
+            "TTE": Eval_tte if Eval_tte.size > 0 else None
+        }
 
-    # Adjust layout for better spacing
+        # Generate student summary
+        Nd_mean = (np.mean(Nd_tn), np.mean(Nd_tt))
+        T_tn_tot = np.sum(T_tn)
+        loss_tn_f, loss_tt_f = Loss_tn[1,-1], Loss_tt[1,-1]
+        eval_tte_f = Eval_tte[1,-1] if Eval_tte.size > 0 else None
+
+        student_summary = ru.get_student_summary(
+            student, Neps_tot, Nd_mean, T_tn_tot,
+            loss_tn_f, loss_tt_f, eval_tte_f)
+
+        learning_summary += student_summary
+
+    # Compile the learning summary footer
+    learning_summary += (f"{'=' * Nln}")
+
+    # Print the learning summary
+    console.print(learning_summary)
+
+    # Plot the losses
+    titles = ["Training", "Testing"]
+    fig, axs = plt.subplots(1, 2, figsize=(6, 3))
+    
+    # Plot the losses
+    for student_name,data in student_data.items():
+        axs[0].plot(data["Train"][0,:],data["Train"][1,:], label=student_name)
+        axs[1].plot(data["Test"][0,:],data["Test"][1,:], label=student_name)
+
+    axs[0].set_ylabel('Loss')
+    for idx,ax in enumerate(axs):
+        ax.set_title(titles[idx])
+        ax.set_xlabel('Epochs')
+        ax.legend(loc='upper right', fontsize='small')
+
+        if use_log:
+            ax.set_yscale('log')
+    
     plt.tight_layout()
-
-    # Show the plots
     plt.show(block=False)
+    
+    # Plot the TTE (if available)
+    if any([data["TTE"] is not None for data in student_data.values()]):
+        fig, ax = plt.subplots(figsize=(6, 3))
+        for student_name,data in student_data.items():
+            if data["TTE"] is not None:
+                ax.plot(data["TTE"][0,:],data["TTE"][1,:], label=student_name)
 
-def review_simulations(cohort_name:str,course_name:str,roster:List[str],plot_show:bool=False):
+        ax.set_ylabel('TTE (s)')
+        ax.set_xlabel('Epochs')
+        ax.set_yscale('log')
+        ax.set_xlim(0, data["Train"][0,-1])
+        ax.legend(loc='upper right', fontsize='small')
+
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc='lower center', ncol=7, bbox_to_anchor=(0.5, -0.05))
+
+        plt.tight_layout()
+        plt.show(block=False)
+
+def plot_deployments(cohort_name: str, course_name: str, roster: List[str], plot_show: bool = False):
     """
     Plot the simulations for each student in the roster.
-
     """
-    
-    # Add Expert to Roster
-    roster = ["expert"]+roster
 
-    # Initialize Table for plotting and visualization
-    headers=["Mean Solve (Hz)","Worst Solve (Hz)",
-             "Pos TTE (m)","Best Pos TTE (m)"]
-    table = []
+    # Initialize the rich variables
+    console = ru.get_console()
+    table = ru.get_deployment_table()
+
+    # Add Expert to Roster
+    roster = ["expert"] + roster
 
     # Some useful paths
     workspace_path = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    output_path = os.path.join(workspace_path,"cohorts",cohort_name,"output")
+    deployment_folder = os.path.join(workspace_path, "cohorts", cohort_name, "deployment_data")
 
-    # Print some overall stuff
-    print("========================================================================================================")
-    print("Cohort Name:",cohort_name)
-    print("Course Name:",course_name)
+    for pilot in roster:
+        # Load the deployment data
+        try:
+            deployment_path = os.path.join(deployment_folder,"sim_"+course_name+"_"+pilot+".pt")
+            Trajectories = torch.load(deployment_path)
+            
+            # Get pilot metrics
+            metrics = fh.compute_flight_metrics(Trajectories)
+            table = ru.update_deployment_table(table,pilot,metrics)
+        except:
+            console.print(f"Pilot [bold cyan]{pilot}[/] does not have a deployment.")
+            continue
 
-    print("Roster:",roster)
-    for pilot_name in roster:
-        # Load Simulation Data
-        trajectories = torch.load(os.path.join(output_path,"sim_"+course_name+"_"+pilot_name+".pt"))
-        
-        Ebnd = np.zeros((len(trajectories),trajectories[0]["Ndata"]))
-        Tsol = np.zeros((len(trajectories),trajectories[0]["Ndata"]))
-        methods = []
-        for idx,trajectory in enumerate(trajectories):
-            # Extract Method Name
-            method_name = trajectory["rollout_id"].split("_")[0]
-            if method_name not in methods:
-                methods.append(method_name)
-
-            # Error Bounds
-            for i in range(trajectory["Ndata"]):
-                Ebnd[idx,i] = np.min(np.linalg.norm(trajectory["Xro"][:,i].reshape(-1,1)-trajectory["tXUd"][1:11,:],axis=0))
-
-            # Total Solve Time
-            Tsol[idx,:] = np.sum(trajectory["Tsol"],axis=0)
-
-        # Trajectory Data
-        pilot_name = pilot_name
-        mean_solve = 1/np.mean(Tsol)
-        worst_solve = 1/np.max(Tsol)
-        mean_error = np.mean(Ebnd)
-        mean_error_traj = np.mean(Ebnd,axis=1)
-        best_error_idx = np.argmin(mean_error_traj)
-        best_error = mean_error_traj[best_error_idx]
-
-        # Append Data
-        table.append([pilot_name,mean_solve,worst_solve,mean_error,best_error])
-
+        # Plot the trajectories for each pilot
         if plot_show:
-            print("========================================================================================================")
-            print("Visualization ------------------------------------------------------------------------------------------")
-            print("Pilot Name    :",pilot_name)
-            print("Test Method(s):",methods)
-            ps.RO_to_spatial(trajectories,plot_last=True,tXUd=trajectories[0]["tXUd"])
+            console.print(f"Plotting trajectories for [bold cyan]{pilot}[/]...")
+            p3.RO_to_3D(Trajectories,n=40,plot_last=True)
 
-    print("========================================================================================================")
-    print("Performance --------------------------------------------------------------------------------------------")
-    print(tabulate(table,headers=headers,tablefmt="grid"))
+    # Print the summary table
+    console.print(table)
