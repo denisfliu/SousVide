@@ -1,0 +1,12 @@
+{
+  "gate": "left_gate",
+  "scene_key": "left_gate",
+  "permutation": 5,
+  "episodes": [
+    {
+      "episode_id": 0,
+      "success": false,
+      "failure_trajectory_mocap": "falsification_results/debug_run/episodes/episode_00000/trajectory.npz"
+    }
+  ]
+}

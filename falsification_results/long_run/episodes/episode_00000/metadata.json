@@ -1,0 +1,8 @@
+{
+  "episode_id": 0,
+  "seed": 0,
+  "success": true,
+  "num_steps": 1000,
+  "wall_time_s": 43.05484366416931,
+  "gate": "left_gate"
+}

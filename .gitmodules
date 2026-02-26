@@ -4,3 +4,6 @@
 [submodule "external/splatnav"]
 	path = external/splatnav
 	url = git@github.com:chengine/splatnav.git
+[submodule "external/Splat-MOVER"]
+	path = external/Splat-MOVER
+	url = https://github.com/StanfordMSL/Splat-MOVER.git

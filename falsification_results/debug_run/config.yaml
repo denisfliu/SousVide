@@ -1,0 +1,68 @@
+campaign:
+  num_episodes: 1
+  seed_offset: 0
+output:
+  dir: falsification_results/debug_run
+perturbations:
+  action:
+  - std:
+    - 0.05
+    - 0.1
+    - 0.1
+    - 0.1
+    type: ActionNoise
+  environment_means: []
+  environment_opacities: []
+  environment_scales: []
+  observation_camera: []
+  observation_image:
+  - std: 10.0
+    type: ImageNoise
+  observation_state: []
+recovery:
+  amax: 3.0
+  enable: false
+  recovery_total_time: 5.0
+  robot_radius: 0.05
+  vmax: 2.0
+safety:
+  bounds_lower:
+  - -5.0
+  - -5.0
+  - -5.0
+  bounds_upper:
+  - 5.0
+  - 5.0
+  - 5.0
+  max_speed: 5.0
+  max_tilt_deg: 60.0
+  safe_horizon: 3
+scene:
+  config_yml: /home/dfliu/code/SousVide/left_gate_9_24_2025_COLMAP/sagesplat/2025-10-06_215922/config.yml
+  gsplat_name: left_gate_9_24_2025_COLMAP/sagesplat/2025-10-06_215922
+  gsplats_path: /home/dfliu/code/SousVide
+  scene_key: left_gate
+  splatnav_gsplat_path: /home/dfliu/code/SousVide/left_gate_9_24_2025_COLMAP/sagesplat/2025-10-06_215922/config.yml
+simulation:
+  frame_name: carl
+  goal_position_zup:
+  - 1.421417
+  - -0.3320115
+  - 1.0
+  permutation: 5
+  start_position_zup:
+  - 0.104
+  - -0.0219
+  - 1.364
+  t0: 0.0
+  tf: 12.0
+vla:
+  action_mapper_kwargs: {}
+  action_mapper_type: position_delta
+  actions_per_chunk: 50
+  host: moraband
+  hz: 10
+  image_size: 256
+  mask_third_person: true
+  port: 8000
+  prompt: go through the gate on the left and hover over the stuffed animal

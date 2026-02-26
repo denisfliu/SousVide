@@ -18,7 +18,7 @@ dependencies = [
     "casadi",            # acados_template
     "cython",
 
-    # ---- torch (resolved via pytorch-cu118 index below) ----
+    # ---- torch (resolved via pytorch-cu121 index below) ----
     "torch==2.1.2",
     "torchvision==0.16.2",
 
@@ -32,8 +32,9 @@ dependencies = [
     "captum",
 
     # ---- nerfstudio ecosystem ----
-    "nerfstudio==1.1.4",
-    "tiny-cuda-nn",       # built from source; needs nvcc
+    "nerfstudio==1.1.0",
+    "tinycudann",         # built from source; needs nvcc
+    "gsplat==0.1.13",
     "viser",
     "lightglue",
 
@@ -63,12 +64,28 @@ dependencies = [
 
     # ---- build tools ----
     "ninja",
+    "setuptools<70",
+    "wheel",
+    "nvidia-cuda-nvcc-cu12==12.1.105",
+    "nvidia-cuda-runtime-cu12==12.1.105",
+
+    # ---- VLA inference ----
+    "openpi-client",
+
+    # ---- sagesplat deps ----
+    "clip",
+    "timm",
+    "ftfy",
+    "regex",
+    "einops",
+    "torchtyping",
 
     # ---- local packages ----
     "figs",
     "acados-template",
     "hloc",
     "splatnav",
+    "sagesplat",
 ]
 
 [tool.setuptools.packages.find]
@@ -81,24 +98,27 @@ where = ["src"]
 [tool.uv]
 # tiny-cuda-nn must be compiled against the local CUDA install; skip
 # build isolation so it can find nvcc/CUDA headers on PATH / CUDA_HOME.
-no-build-isolation-package = ["tiny-cuda-nn"]
+no-build-isolation-package = ["tinycudann"]
+
 
 [tool.uv.sources]
-# PyTorch CUDA 11.8 pre-built wheels
-torch      = [{ index = "pytorch-cu118" }]
-torchvision = [{ index = "pytorch-cu118" }]
+# PyTorch CUDA 12.1 pre-built wheels
+torch      = [{ index = "pytorch-cu121" }]
+torchvision = [{ index = "pytorch-cu121" }]
 
 # Git sources
-tiny-cuda-nn = { git = "https://github.com/NVlabs/tiny-cuda-nn", subdirectory = "bindings/torch" }
+tinycudann = { git = "https://github.com/NVlabs/tiny-cuda-nn", subdirectory = "bindings/torch" }
 lightglue    = { git = "https://github.com/cvg/LightGlue" }
+clip         = { git = "https://github.com/openai/CLIP.git" }
 
 # Local editable installs
 figs            = { path = "./FiGS",                                                    editable = true }
 acados-template = { path = "./FiGS/acados/interfaces/acados_template",                 editable = true }
 hloc            = { path = "./FiGS/Hierarchical-Localization",                         editable = true }
 splatnav        = { path = "./external/splatnav",                                      editable = true }
+sagesplat       = { path = "./external/Splat-MOVER",                                   editable = true }
 
 [[tool.uv.index]]
-name = "pytorch-cu118"
-url  = "https://download.pytorch.org/whl/cu118"
+name = "pytorch-cu121"
+url  = "https://download.pytorch.org/whl/cu121"
 explicit = true

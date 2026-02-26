@@ -1,0 +1,32 @@
+Problem:
+Vision-Language-Action (VLA) models are increasingly used for complex robot control tasks, but they can fail in unpredictable ways when deployed in unstructured environments (e.g., resulting in collisions, exiting safe bounds, exhibiting excessive velocity or tilt, or diverging from the goal). Testing these policies entirely in the real world is expensive, slow, and dangerous. There is a critical need to systematically stress-test (falsify) these models in realistic conditions to identify failure modes, understand the boundaries of their competence, and automatically generate corrective data to improve them.
+
+Research Question:
+How can we systematically falsify VLA control policies in high-fidelity, photorealistic simulated environments, and automatically generate dynamically feasible, safe recovery trajectories from the point of failure to provide corrective training data for iterative policy improvement?
+
+Related Work:
+1. Falsification of Cyber-Physical Systems: Automated methods to search the state and disturbance space of closed-loop control systems to find edge cases and failure modes.
+2. Neural Rendering for Simulation (NeRFs and 3D Gaussian Splatting): Using representations like 3D Gaussian Splatting (e.g., GSplat, nerfstudio) to create highly realistic simulated environments from real-world data, enabling closed-loop visual policy testing.
+3. Safe Replanning and Trajectory Optimization: Collision-free path planning methods operating directly on neural representations (such as SplatNav/SplatPlan), which construct collision sets from Gaussians to plan safe paths.
+4. Iterative Policy Learning (DAgger): Data Aggregation techniques where a policy is rolled out, failures are identified, and an "expert" (or planner) provides the correct actions from those states to fine-tune the model.
+
+Method:
+The proposed framework is a closed-loop falsification and recovery pipeline integrating the following components:
+
+1. High-Fidelity Simulation Loop: 
+   The VLA policy (e.g., OpenPI server) is wrapped as a controller within the FiGS simulator. The simulator is coupled with a 3D Gaussian Splat scene, which provides photorealistic rendering for dual-camera setups (forward and downward) at each control step.
+
+2. Pluggable Perturbation Engine: 
+   To stress-test the policy, structured perturbations are systematically applied across three surfaces:
+   - Action: Injecting Gaussian noise, constant bias, or scaling to the control outputs.
+   - Observation: Injecting image noise/occlusion/brightness shifts, adding noise to camera extrinsics (misaligning rendering from true state), and perturbing the state estimates.
+   - Environment: Modifying the Gaussian splat scene itself (shifting, scaling, or altering the opacity of Gaussians) to dynamically change both the visual observations and the physical collision geometry.
+
+3. Live Failure Detection: 
+   A modular failure detector evaluates the trajectory at each timestep against configurable safety criteria (e.g., bounding boxes, maximum velocity, maximum tilt, goal divergence, and heuristic collision). It identifies when a failure occurs and precisely isolates the "last safe state" just before the failure horizon.
+
+4. SplatNav Recovery Planning: 
+   When a failure is detected, the orchestrator passes the last safe state to the SplatNav recovery planner. SplatNav uses A* and spline optimization over the collision geometry extracted from the Gaussian splats to plan a collision-free path from the safe state to the goal.
+
+5. Corrective Data Generation: 
+   If a feasible path is found, the recovery trajectory is rolled out in the FiGS simulator using a Model Predictive Controller (MPC). This yields a dynamically feasible, safe trajectory (complete with states, controls, and rendered images) representing what the robot "should have done," which can be used for downstream DAgger-style training and analysis. The framework scales this into batch falsification campaigns to aggregate statistics on failure rates and recovery success.

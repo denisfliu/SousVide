@@ -1,0 +1,14 @@
+{
+  "episode_id": 0,
+  "seed": 0,
+  "success": false,
+  "num_steps": 7,
+  "wall_time_s": 0.5385541915893555,
+  "gate": "left_gate",
+  "failure": {
+    "type": "EXCESSIVE_VELOCITY",
+    "description": "Speed 5.27 exceeds 5.00 m/s",
+    "failure_step": 6,
+    "last_safe_step": 5
+  }
+}

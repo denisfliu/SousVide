@@ -1,0 +1,13 @@
+{
+  "total_episodes": 1,
+  "successes": 0,
+  "failures": 1,
+  "failure_rate": 1.0,
+  "recovered": 0,
+  "recovery_rate": 0.0,
+  "failure_types": {
+    "EXCESSIVE_VELOCITY": 1
+  },
+  "avg_failure_step": 6.0,
+  "avg_wall_time_s": 0.5385541915893555
+}
