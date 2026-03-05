@@ -83,6 +83,8 @@ class OrchestratorConfig:
 
     # Goal (NED coordinates for the FiGS sim)
     goal_position: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    gate_position: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    gate_pass_radius_m: float = 0.25
 
     # Initial state (NED)
     x0: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0,
@@ -214,6 +216,34 @@ class FalsificationOrchestrator:
 
                 if cfg.recovery_rollout and recovery_result.feasible:
                     recovery_figs = self._rollout_recovery(recovery_result)
+        else:
+            # Explicitly mark "did not pass through gate" as a failure mode.
+            if trajectory and not self._trajectory_passes_gate(trajectory):
+                fail_snap = trajectory[-1]
+                safe_snap = detector.last_safe_state or trajectory[0]
+                failure_record = FailureRecord(
+                    failure_type=FailureType.MISSED_GATE,
+                    description=(
+                        "Trajectory did not pass within "
+                        f"{cfg.gate_pass_radius_m:.3f}m of gate waypoint"
+                    ),
+                    failure_step=fail_snap.step_index,
+                    failure_state=fail_snap,
+                    last_safe_step=safe_snap.step_index,
+                    last_safe_state=safe_snap,
+                    trajectory_up_to_failure=list(trajectory),
+                    metadata={
+                        "gate_position_ned": np.array(cfg.gate_position).tolist(),
+                        "gate_pass_radius_m": cfg.gate_pass_radius_m,
+                    },
+                )
+                if cfg.enable_recovery and self.recovery is not None:
+                    recovery_result = self.recovery.plan_recovery(
+                        failure_record,
+                        goal_position_figs=np.array(cfg.goal_position),
+                    )
+                    if cfg.recovery_rollout and recovery_result.feasible:
+                        recovery_figs = self._rollout_recovery(recovery_result)
 
         # --- Restore environment -----------------------------------------------
         self._restore_env(model_params_backup)
@@ -379,9 +409,25 @@ class FalsificationOrchestrator:
         model = self.simulator.gsplat.pipeline.model
 
         if len(self.perturbations.environment_means) > 0:
-            means = model.means  # property that returns the tensor
-            backup["means"] = means.data.clone()
-            model.means.data = self.perturbations.environment_means.apply(means.data)
+            means_data = model.means.data
+            quats_data = model.quats.data
+            backup["means"] = means_data.clone()
+
+            means_out = means_data
+            quats_out = quats_data
+            quats_changed = False
+
+            for perturb in self.perturbations.environment_means.perturbations:
+                means_out = perturb.apply(means_out)
+                if hasattr(perturb, "apply_quats"):
+                    if "quats" not in backup:
+                        backup["quats"] = quats_data.clone()
+                    quats_out = perturb.apply_quats(quats_out)
+                    quats_changed = True
+
+            model.means.data = means_out
+            if quats_changed:
+                model.quats.data = quats_out
 
         if len(self.perturbations.environment_scales) > 0:
             scales = model.scales
@@ -402,10 +448,21 @@ class FalsificationOrchestrator:
         model = self.simulator.gsplat.pipeline.model
         if "means" in backup:
             model.means.data = backup["means"]
+        if "quats" in backup:
+            model.quats.data = backup["quats"]
         if "scales" in backup:
             model.scales.data = backup["scales"]
         if "opacities" in backup:
             model.opacities.data = backup["opacities"]
+
+    def _trajectory_passes_gate(self, trajectory: List[StateSnapshot]) -> bool:
+        """Returns True if any state gets sufficiently close to the gate."""
+        gate_pos = np.asarray(self.config.gate_position, dtype=float)
+        radius = float(self.config.gate_pass_radius_m)
+        for snap in trajectory:
+            if np.linalg.norm(snap.state[:3] - gate_pos) <= radius:
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Recovery rollout

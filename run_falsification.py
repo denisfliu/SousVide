@@ -90,6 +90,9 @@ GATE_PRESETS: Dict[str, Dict] = {
         "start_position_zup": [0.104, -0.0219, 1.364],
         "goal_position_zup": [1.421417, -0.3320115, 1.0],
         "gate_position_zup": [0.804785, 0.79716, 1.5],
+        "gate_mask_path": "/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_mask.npy",
+        "gate_points_path": "/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_points.npy",
+        "table_points_path": "/home/jatucker/SousVide/artifacts/left_gate/left_table_points.npy",
         "prompt": "go through the gate on the left and hover over the stuffed animal",
     },
     "right_gate": {
@@ -100,6 +103,9 @@ GATE_PRESETS: Dict[str, Dict] = {
         "start_position_zup": [0.104, -0.0219, 1.364],
         "goal_position_zup": [1.421417, -0.3320115, 1.0],
         "gate_position_zup": [0.804785, 0.79716, 1.5],
+        "gate_mask_path": "/home/jatucker/SousVide/artifacts/right_gate/right_gate_bottom_mask.npy",
+        "gate_points_path": "/home/jatucker/SousVide/artifacts/right_gate/right_gate_bottom_points.npy",
+        "table_points_path": "/home/jatucker/SousVide/artifacts/right_gate/right_table_points.npy",
         "prompt": "go through the gate on the right and hover over the stuffed animal",
     },
 }
@@ -124,6 +130,8 @@ DEFAULT_CONFIG: Dict = {
         "permutation": 5,
         "goal_position_zup": None,
         "start_position_zup": None,
+        "gate_position_zup": None,
+        "gate_pass_radius_m": 0.25,
     },
     "vla": {
         "host": "moraband",
@@ -189,7 +197,27 @@ def apply_gate_preset(cfg: Dict, gate: str) -> Dict:
     cfg["simulation"]["goal_position_zup"] = (
         cfg["simulation"]["goal_position_zup"] or preset["goal_position_zup"]
     )
+    cfg["simulation"]["gate_position_zup"] = (
+        cfg["simulation"]["gate_position_zup"] or preset["gate_position_zup"]
+    )
     cfg["vla"]["prompt"] = cfg["vla"]["prompt"] or preset["prompt"]
+    if gate in ("left_gate", "right_gate") and not cfg["perturbations"].get("environment_means"):
+        cfg["perturbations"]["environment_means"] = [
+            {
+                "type": "GateRigidTransform",
+                "gate_mask_path": preset["gate_mask_path"],
+                "gate_points_path": preset["gate_points_path"],
+                "table_points_path": preset["table_points_path"],
+                "max_match_distance_m": 0.01,
+                "max_translation_m": [0.04, 0.04, 0.02],
+                "yaw_range_deg": [-6.0, 6.0],
+                "min_translation_m": 0.002,
+                "min_abs_yaw_deg": 0.5,
+                "min_table_clearance_m": 0.03,
+                "max_sampling_tries": 120,
+                "strict": True,
+            }
+        ]
     cfg["output"]["dir"] = cfg["output"]["dir"] or f"falsification_results/{gate}"
     return cfg
 
@@ -290,6 +318,7 @@ def main():
     # ---- Coordinate conversion ----
     start_ned = convert_to_ned(cfg["simulation"]["start_position_zup"], perm)
     goal_ned = convert_to_ned(cfg["simulation"]["goal_position_zup"], perm)
+    gate_ned = convert_to_ned(cfg["simulation"]["gate_position_zup"], perm)
     x0 = np.concatenate([start_ned, np.zeros(3), np.array([0, 0, 0, 1.0])])
 
     # ---- Load GSplat & simulator ----
@@ -375,6 +404,8 @@ def main():
         tf=cfg["simulation"]["tf"],
         frame_name=cfg["simulation"]["frame_name"],
         goal_position=goal_ned.tolist(),
+        gate_position=gate_ned.tolist(),
+        gate_pass_radius_m=cfg["simulation"]["gate_pass_radius_m"],
         x0=x0.tolist(),
         Tc2b_forward=Tc2b_forward,
         Tc2b_downward=Tc2b_downward,

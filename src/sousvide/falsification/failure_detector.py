@@ -40,6 +40,7 @@ class StateSnapshot:
 class FailureType(Enum):
     NONE = auto()
     COLLISION = auto()
+    MISSED_GATE = auto()
     OUT_OF_BOUNDS = auto()
     EXCESSIVE_VELOCITY = auto()
     EXCESSIVE_TILT = auto()

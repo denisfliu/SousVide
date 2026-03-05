@@ -19,11 +19,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 import torch
+from scipy.spatial import cKDTree
 
 
 # ===================================================================
@@ -400,6 +402,218 @@ class GaussianOpacity(Perturbation):
         return gsplat_opacities
 
 
+@dataclass
+class GateRigidTransformConfig:
+    """Apply a bounded rigid transform to gate Gaussians.
+
+    This perturbation is strict by default: if it cannot sample a valid
+    non-trivial transform that satisfies table-clearance constraints, it raises.
+    """
+
+    gate_mask_path: str = ""
+    gate_points_path: str = ""
+    table_points_path: str = ""
+    max_match_distance_m: float = 0.01
+    max_translation_m: Tuple[float, float, float] = (0.05, 0.05, 0.03)
+    yaw_range_deg: Tuple[float, float] = (-8.0, 8.0)
+    min_translation_m: float = 0.002
+    min_abs_yaw_deg: float = 0.5
+    min_table_clearance_m: float = 0.03
+    max_sampling_tries: int = 100
+    strict: bool = True
+
+
+class GateRigidTransform(Perturbation):
+    """Perturb only gate Gaussians with bounded translation + yaw."""
+
+    def __init__(self, config: GateRigidTransformConfig | None = None):
+        self.cfg = config or GateRigidTransformConfig()
+        self._rng: np.random.RandomState = np.random.RandomState()
+        self._mask: np.ndarray | None = None
+        self._gate_points_ref: np.ndarray | None = None
+        self._gate_indices: np.ndarray | None = None
+        self._table_points: np.ndarray | None = None
+        self._translation: np.ndarray | None = None
+        self._yaw_rad: float | None = None
+        self._rotation_np: np.ndarray | None = None
+        self._sampled: bool = False
+
+    def reset(self, rng: np.random.RandomState) -> None:
+        self._rng = rng
+        self._translation = None
+        self._yaw_rad = None
+        self._rotation_np = None
+        self._sampled = False
+        self._gate_indices = None
+        if self._mask is None:
+            if self.cfg.gate_mask_path:
+                mask_path = Path(self.cfg.gate_mask_path)
+                if not mask_path.exists():
+                    raise FileNotFoundError(f"Gate mask not found: {mask_path}")
+                mask = np.asarray(np.load(mask_path), dtype=bool).reshape(-1)
+                if mask.ndim != 1 or mask.size == 0:
+                    raise ValueError(f"Invalid gate mask shape from: {mask_path}")
+                self._mask = mask
+            elif not self.cfg.gate_points_path:
+                raise ValueError(
+                    "GateRigidTransform requires gate_mask_path and/or gate_points_path."
+                )
+        if self._gate_points_ref is None and self.cfg.gate_points_path:
+            gate_points_path = Path(self.cfg.gate_points_path)
+            if not gate_points_path.exists():
+                raise FileNotFoundError(f"Gate points not found: {gate_points_path}")
+            pts = np.asarray(np.load(gate_points_path), dtype=np.float64)
+            if pts.ndim != 2 or pts.shape[1] != 3 or pts.shape[0] == 0:
+                raise ValueError(f"Invalid gate points shape from: {gate_points_path}")
+            self._gate_points_ref = pts
+        if self._table_points is None:
+            if not self.cfg.table_points_path:
+                raise ValueError("GateRigidTransform requires table_points_path.")
+            table_path = Path(self.cfg.table_points_path)
+            if not table_path.exists():
+                raise FileNotFoundError(f"Table points not found: {table_path}")
+            pts = np.asarray(np.load(table_path), dtype=float)
+            if pts.ndim != 2 or pts.shape[1] != 3 or pts.shape[0] == 0:
+                raise ValueError(f"Invalid table points shape from: {table_path}")
+            self._table_points = pts
+
+    def _resolve_gate_indices(self, gsplat_means: torch.Tensor) -> None:
+        """Resolve gate indices on the current model means."""
+        n_means = gsplat_means.shape[0]
+
+        # Prefer coordinate-based matching when gate points are available.
+        if self._gate_points_ref is None:
+            if self._mask is not None and self._mask.shape[0] == n_means:
+                self._gate_indices = np.where(self._mask)[0]
+                if self._gate_indices.size == 0:
+                    raise ValueError("Gate mask produced no selected gaussians.")
+                return
+            raise ValueError("Could not resolve gate indices: no valid gate points or mask.")
+
+        means_np = gsplat_means.detach().cpu().numpy()
+        mean_tree = cKDTree(means_np)
+        dists, idx = mean_tree.query(self._gate_points_ref, k=1)
+        max_dist = float(np.max(dists))
+        if max_dist > self.cfg.max_match_distance_m:
+            raise ValueError(
+                "Gate point to model-mean matching too far: "
+                f"max distance {max_dist:.6f}m exceeds {self.cfg.max_match_distance_m:.6f}m"
+            )
+        unique_idx = np.unique(idx.astype(np.int64))
+        if unique_idx.size == 0:
+            raise ValueError("Gate point matching resulted in zero gaussian indices.")
+
+        # Optional sanity check against mask if mask aligns with current scene.
+        if self._mask is not None and self._mask.shape[0] == n_means:
+            mask_idx = np.where(self._mask)[0]
+            overlap = np.intersect1d(unique_idx, mask_idx).size
+            if overlap == 0:
+                raise ValueError(
+                    "Gate point matching found no overlap with provided gate mask; "
+                    "artifacts likely come from different scenes."
+                )
+        self._gate_indices = unique_idx
+
+    def _sample_valid_transform(self, gate_points: np.ndarray) -> None:
+        assert self._table_points is not None
+        table_tree = cKDTree(self._table_points)
+        center = gate_points.mean(axis=0, keepdims=True)
+        max_tx, max_ty, max_tz = self.cfg.max_translation_m
+        yaw_min, yaw_max = self.cfg.yaw_range_deg
+        last_failure = "unknown"
+
+        for _ in range(self.cfg.max_sampling_tries):
+            t = np.array(
+                [
+                    self._rng.uniform(-max_tx, max_tx),
+                    self._rng.uniform(-max_ty, max_ty),
+                    self._rng.uniform(-max_tz, max_tz),
+                ],
+                dtype=np.float64,
+            )
+            yaw_deg = float(self._rng.uniform(yaw_min, yaw_max))
+
+            if (
+                np.linalg.norm(t) < self.cfg.min_translation_m
+                and abs(yaw_deg) < self.cfg.min_abs_yaw_deg
+            ):
+                last_failure = "transform too close to identity"
+                continue
+
+            yaw_rad = np.deg2rad(yaw_deg)
+            cos_yaw = float(np.cos(yaw_rad))
+            sin_yaw = float(np.sin(yaw_rad))
+            rot = np.array(
+                [
+                    [cos_yaw, -sin_yaw, 0.0],
+                    [sin_yaw, cos_yaw, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=np.float64,
+            )
+
+            transformed = (gate_points - center) @ rot.T + center + t
+            min_dist = float(table_tree.query(transformed, k=1)[0].min())
+            if min_dist < self.cfg.min_table_clearance_m:
+                last_failure = (
+                    f"table clearance violation ({min_dist:.4f}m < "
+                    f"{self.cfg.min_table_clearance_m:.4f}m)"
+                )
+                continue
+
+            self._translation = t
+            self._yaw_rad = yaw_rad
+            self._rotation_np = rot
+            self._sampled = True
+            return
+
+        msg = (
+            "GateRigidTransform failed to sample a valid non-identity transform "
+            f"in {self.cfg.max_sampling_tries} tries; last failure: {last_failure}"
+        )
+        if self.cfg.strict:
+            raise RuntimeError(msg)
+        raise RuntimeError(msg)
+
+    def apply(self, gsplat_means: torch.Tensor) -> torch.Tensor:
+        if self._table_points is None:
+            raise RuntimeError("GateRigidTransform used before reset().")
+        if gsplat_means.ndim != 2 or gsplat_means.shape[1] != 3:
+            raise ValueError("Expected gsplat_means shape (N, 3).")
+        if self._gate_indices is None:
+            self._resolve_gate_indices(gsplat_means)
+
+        gate_points = gsplat_means[self._gate_indices].detach().cpu().numpy()
+        if not self._sampled:
+            self._sample_valid_transform(gate_points)
+        assert self._translation is not None and self._rotation_np is not None
+
+        center = gate_points.mean(axis=0, keepdims=True)
+        transformed_gate = (gate_points - center) @ self._rotation_np.T + center + self._translation
+
+        out = gsplat_means.clone()
+        transformed_gate_t = torch.from_numpy(transformed_gate).to(
+            device=gsplat_means.device, dtype=gsplat_means.dtype
+        )
+        out[self._gate_indices] = transformed_gate_t
+        return out
+
+    def apply_quats(self, gsplat_quats: torch.Tensor) -> torch.Tensor:
+        """Rotate gate Gaussian orientations by sampled yaw (wxyz convention)."""
+        if self._gate_indices is None or self._yaw_rad is None:
+            raise RuntimeError("GateRigidTransform quaternion update called before sampling.")
+        out = gsplat_quats.clone()
+        q_delta = torch.tensor(
+            [np.cos(self._yaw_rad / 2.0), 0.0, 0.0, np.sin(self._yaw_rad / 2.0)],
+            device=gsplat_quats.device,
+            dtype=gsplat_quats.dtype,
+        )
+        gate_quats = out[self._gate_indices]
+        out[self._gate_indices] = _quat_multiply_wxyz_torch(q_delta[None, :], gate_quats)
+        out[self._gate_indices] = torch.nn.functional.normalize(out[self._gate_indices], dim=-1)
+        return out
+
+
 # ===================================================================
 # Composition
 # ===================================================================
@@ -464,6 +678,23 @@ def _quat_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     ])
 
 
+def _quat_multiply_wxyz_torch(
+    q1: torch.Tensor, q2: torch.Tensor
+) -> torch.Tensor:
+    """Hamilton product for quaternions in [w, x, y, z] format."""
+    w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+    w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
+    return torch.stack(
+        (
+            w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+            w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+            w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+            w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        ),
+        dim=-1,
+    )
+
+
 # ===================================================================
 # Factory
 # ===================================================================
@@ -498,6 +729,7 @@ def build_perturbation_suite(config: Dict) -> PerturbationSuite:
         "GaussianShift": GaussianShift,
         "GaussianScale": GaussianScale,
         "GaussianOpacity": GaussianOpacity,
+        "GateRigidTransform": GateRigidTransform,
     }
 
     _config_registry: Dict[str, type] = {
@@ -512,6 +744,7 @@ def build_perturbation_suite(config: Dict) -> PerturbationSuite:
         "GaussianShift": GaussianShiftConfig,
         "GaussianScale": GaussianScaleConfig,
         "GaussianOpacity": GaussianOpacityConfig,
+        "GateRigidTransform": GateRigidTransformConfig,
     }
 
     suite = PerturbationSuite()

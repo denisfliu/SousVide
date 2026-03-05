@@ -1,5 +1,11 @@
 left*
 right*
+!artifacts/
+!artifacts/left_gate/
+!artifacts/left_gate/left_*.npy
+!artifacts/right_gate/
+!artifacts/right_gate/right_*.npy
+artifacts/*/perturbation_samples/
 .vscode/
 temp/
 
