@@ -1,3 +1,4 @@
+# ---- Nerfstudio scene data (large, not source) ----
 left*
 right*
 !artifacts/
@@ -6,14 +7,34 @@ right*
 !artifacts/right_gate/
 !artifacts/right_gate/right_*.npy
 artifacts/*/perturbation_samples/
-.vscode/
-temp/
 
+# ---- Falsification results (experiment output, not source) ----
+falsification_results/
+
+# ---- Editor / IDE ----
+.vscode/
+
+# ---- Temporary / scratch ----
+temp/
+*.obj
+
+# ---- Python build artifacts ----
 **/*.egg-info/
 **/__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# ---- ACADOS generated solver code ----
 **/c_generated_code/
 **/acados_ocp_quadcopter_ode.json
 **/acados_sim.json
+
+# ---- Data directories ----
 **/rollout_data/
 **/test_data/
 **/pretrained_models/
+
+# ---- Jupyter / IPython ----
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/

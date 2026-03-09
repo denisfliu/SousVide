@@ -1,0 +1,17 @@
+simulation:
+  tf: 100.0
+  gate_pass_radius_m: 0.20
+
+perturbations:
+  action:
+    - type: ActionNoise
+      std: [0.10, 0.20, 0.20, 0.20]
+    - type: ActionBias
+      bias_range:
+        - [-0.08, 0.08]
+        - [-0.25, 0.25]
+        - [-0.25, 0.25]
+        - [-0.25, 0.25]
+  observation_image:
+    - type: ImageNoise
+      std: 15.0

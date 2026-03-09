@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Replay a falsification episode and render the forward/downward cameras."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+
+import imageio.v2 as imageio
+import numpy as np
+import yaml
+
+os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
+os.environ.setdefault("CC", "gcc-11")
+os.environ.setdefault("CXX", "g++-11")
+
+from run_falsification import GATE_PRESETS
+from sousvide.falsification.perturbations import build_perturbation_suite
+
+import figs.utilities.config_helper as ch
+import figs.utilities.transform_helper as th
+import figs.dynamics.quadcopter_specifications as qs
+from figs.render.gsplat import GSplat
+
+
+def _camera_transforms():
+    tc2b_forward_base = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, -1.0, 0.0, -0.05],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
+    r_z_180 = np.eye(4)
+    r_z_180[:3, :3] = np.diag([-1.0, -1.0, 1.0])
+    r_y_180 = np.eye(4)
+    r_y_180[:3, :3] = np.diag([-1.0, 1.0, -1.0])
+    r_y_90 = np.eye(4)
+    r_y_90[:3, :3] = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0.0]])
+    tc2b_forward = tc2b_forward_base @ r_z_180 @ r_y_180 @ r_y_90
+
+    tc2b_downward_base = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, -0.05],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
+    r_x_180 = np.eye(4)
+    r_x_180[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    r_z_90_d = np.eye(4)
+    r_z_90_d[:3, :3] = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1.0]])
+    tc2b_downward = tc2b_downward_base @ r_x_180 @ r_z_90_d
+    return tc2b_forward, tc2b_downward
+
+
+def _apply_environment_perturbations(gsplat: GSplat, perturbation_cfg: dict, seed: int) -> dict:
+    suite = build_perturbation_suite(perturbation_cfg)
+    suite.reset_all(seed)
+    model = gsplat.pipeline.model
+    result: dict = {}
+
+    if len(suite.environment_means) > 0:
+        means_out = model.means.data
+        quats_out = model.quats.data
+        for perturb in suite.environment_means.perturbations:
+            means_out = perturb.apply(means_out)
+            if hasattr(perturb, "apply_quats"):
+                quats_out = perturb.apply_quats(quats_out)
+            if getattr(perturb, "_translation", None) is not None:
+                result["translation_xyz_m"] = np.asarray(perturb._translation).tolist()
+            if getattr(perturb, "_yaw_rad", None) is not None:
+                result["yaw_deg"] = float(np.degrees(perturb._yaw_rad))
+        model.means.data = means_out
+        model.quats.data = quats_out
+    return result
+
+
+def _make_contact_sheet(frames: list[np.ndarray], cols: int = 4) -> np.ndarray:
+    if not frames:
+        raise ValueError("No frames provided for contact sheet.")
+    h, w, c = frames[0].shape
+    rows = int(np.ceil(len(frames) / cols))
+    sheet = np.zeros((rows * h, cols * w, c), dtype=np.uint8)
+    for i, frame in enumerate(frames):
+        r = i // cols
+        cidx = i % cols
+        sheet[r * h : (r + 1) * h, cidx * w : (cidx + 1) * w] = frame
+    return sheet
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--results-dir", type=Path, required=True)
+    parser.add_argument("--episode", type=int, default=0)
+    parser.add_argument("--stride", type=int, default=10, help="Render every Nth state")
+    parser.add_argument("--fps", type=int, default=10, help="Output video fps")
+    parser.add_argument("--max-frames", type=int, default=0, help="Limit rendered frames; 0 means all sampled frames")
+    args = parser.parse_args()
+
+    with open(args.results_dir / "config.yaml", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    ep_dir = args.results_dir / "episodes" / f"episode_{args.episode:05d}"
+    if not ep_dir.exists():
+        raise FileNotFoundError(f"Episode directory not found: {ep_dir}")
+
+    with open(ep_dir / "metadata.json", encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    states = np.load(ep_dir / "trajectory.npz")["states"]
+    seed = int(metadata["seed"])
+    gate = metadata["gate"]
+    frame_name = cfg["simulation"]["frame_name"]
+
+    gsplat = GSplat(Path(cfg["scene"]["config_yml"]))
+    frame_dict = ch.get_config(frame_name, "frames")
+    spec = qs.generate_specifications(frame_dict)
+    camera_fwd = gsplat.generate_output_camera(spec["camera"])
+    camera_dwn = gsplat.generate_output_camera(spec["camera"])
+    tc2b_forward, tc2b_downward = _camera_transforms()
+
+    perturbation_info = _apply_environment_perturbations(gsplat, cfg["perturbations"], seed)
+
+    out_dir = ep_dir / "camera_renders"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    indices = list(range(0, len(states), max(1, args.stride)))
+    if indices[-1] != len(states) - 1:
+        indices.append(len(states) - 1)
+    if args.max_frames > 0:
+        indices = indices[: args.max_frames]
+
+    forward_frames: list[np.ndarray] = []
+    downward_frames: list[np.ndarray] = []
+
+    for idx in indices:
+        xcr = states[idx]
+        tb2w = th.x_to_T(xcr)
+        tc2w_fwd = tb2w @ tc2b_forward
+        tc2w_dwn = tb2w @ tc2b_downward
+        rgb_fwd, _ = gsplat.render_rgb(camera_fwd, tc2w_fwd)
+        rgb_dwn, _ = gsplat.render_rgb(camera_dwn, tc2w_dwn)
+        forward_frames.append(rgb_fwd)
+        downward_frames.append(rgb_dwn)
+
+    imageio.mimwrite(out_dir / "forward.mp4", forward_frames, fps=args.fps)
+    imageio.mimwrite(out_dir / "downward.mp4", downward_frames, fps=args.fps)
+    imageio.imwrite(out_dir / "forward_contact_sheet.png", _make_contact_sheet(forward_frames[: min(12, len(forward_frames))]))
+    imageio.imwrite(out_dir / "downward_contact_sheet.png", _make_contact_sheet(downward_frames[: min(12, len(downward_frames))]))
+
+    summary = {
+        "results_dir": str(args.results_dir),
+        "episode": args.episode,
+        "seed": seed,
+        "gate": gate,
+        "stride": args.stride,
+        "num_rendered_frames": len(indices),
+        "perturbation": perturbation_info,
+        "outputs": {
+            "forward_video": str(out_dir / "forward.mp4"),
+            "downward_video": str(out_dir / "downward.mp4"),
+            "forward_contact_sheet": str(out_dir / "forward_contact_sheet.png"),
+            "downward_contact_sheet": str(out_dir / "downward_contact_sheet.png"),
+        },
+    }
+    with open(out_dir / "render_summary.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    print(json.dumps(summary, indent=2))
+
+
+if __name__ == "__main__":
+    main()

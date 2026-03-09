@@ -68,6 +68,7 @@ dependencies = [
     "wheel",
     "nvidia-cuda-nvcc-cu12==12.1.105",
     "nvidia-cuda-runtime-cu12==12.1.105",
+    "websockets>=11,<12",
 
     # ---- VLA inference ----
     "openpi-client",

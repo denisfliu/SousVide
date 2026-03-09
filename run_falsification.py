@@ -89,10 +89,15 @@ GATE_PRESETS: Dict[str, Dict] = {
         "permutation": 5,
         "start_position_zup": [0.104, -0.0219, 1.364],
         "goal_position_zup": [1.421417, -0.3320115, 1.0],
-        "gate_position_zup": [0.804785, 0.79716, 1.5],
-        "gate_mask_path": "/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_mask.npy",
-        "gate_points_path": "/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_points.npy",
-        "table_points_path": "/home/jatucker/SousVide/artifacts/left_gate/left_table_points.npy",
+        # x,y from COLMAP artifact centroid converted to MOCAP; z interpolated at that x
+        # along the start→goal line so it matches the drone's actual flight height.
+        "gate_position_zup": [0.936, 0.015, 1.134],
+        "gate_opening_half_w": 0.25,
+        "gate_opening_half_h": 0.25,
+        "gate_post_radius": 0.04,
+        "gate_mask_path": str(_REPO_ROOT / "artifacts" / "left_gate" / "left_gate_bottom_mask.npy"),
+        "gate_points_path": str(_REPO_ROOT / "artifacts" / "left_gate" / "left_gate_bottom_points.npy"),
+        "table_points_path": str(_REPO_ROOT / "artifacts" / "left_gate" / "left_table_points.npy"),
         "prompt": "go through the gate on the left and hover over the stuffed animal",
     },
     "right_gate": {
@@ -102,10 +107,14 @@ GATE_PRESETS: Dict[str, Dict] = {
         "permutation": 5,
         "start_position_zup": [0.104, -0.0219, 1.364],
         "goal_position_zup": [1.421417, -0.3320115, 1.0],
-        "gate_position_zup": [0.804785, 0.79716, 1.5],
-        "gate_mask_path": "/home/jatucker/SousVide/artifacts/right_gate/right_gate_bottom_mask.npy",
-        "gate_points_path": "/home/jatucker/SousVide/artifacts/right_gate/right_gate_bottom_points.npy",
-        "table_points_path": "/home/jatucker/SousVide/artifacts/right_gate/right_table_points.npy",
+        # x,y,z from COLMAP artifact centroid converted to MOCAP.
+        "gate_position_zup": [1.107, -0.343, 1.159],
+        "gate_opening_half_w": 0.25,
+        "gate_opening_half_h": 0.25,
+        "gate_post_radius": 0.04,
+        "gate_mask_path": str(_REPO_ROOT / "artifacts" / "right_gate" / "right_gate_bottom_mask.npy"),
+        "gate_points_path": str(_REPO_ROOT / "artifacts" / "right_gate" / "right_gate_bottom_points.npy"),
+        "table_points_path": str(_REPO_ROOT / "artifacts" / "right_gate" / "right_table_points.npy"),
         "prompt": "go through the gate on the right and hover over the stuffed animal",
     },
 }
@@ -150,6 +159,9 @@ DEFAULT_CONFIG: Dict = {
         "max_speed": 5.0,
         "max_tilt_deg": 60.0,
         "safe_horizon": 3,
+        # Reduced from 0.225 to 0.15 m so the drone bounding sphere fits
+        # inside the gate opening (half-width 0.25 m) with 0.1 m clearance.
+        "robot_radius": 0.15,
     },
     "perturbations": {
         "action": [
@@ -166,10 +178,18 @@ DEFAULT_CONFIG: Dict = {
     },
     "recovery": {
         "enable": True,
-        "robot_radius": 0.05,
+        # Robot radius in Nerfstudio-internal (NS) frame units.
+        # 1 NS unit ≈ 5.78 m MOCAP for the left-gate scene.
+        # 0.02 NS ≈ 0.116 m MOCAP — small enough to clear the gate opening.
+        "robot_radius": 0.02,
         "vmax": 2.0,
         "amax": 3.0,
         "recovery_total_time": 5.0,
+        # Voxel bounds in NS-internal frame (scene spans ~[-0.15, 0.15] in NS).
+        # ±0.5 NS covers roughly ±2.9 m MOCAP — enough for the full lab room.
+        "env_lower_bound": [-0.5, -0.5, -0.5],
+        "env_upper_bound": [0.5, 0.5, 0.5],
+        "voxel_resolution": 150,
     },
     "campaign": {
         "num_episodes": 50,
@@ -201,13 +221,23 @@ def apply_gate_preset(cfg: Dict, gate: str) -> Dict:
         cfg["simulation"]["gate_position_zup"] or preset["gate_position_zup"]
     )
     cfg["vla"]["prompt"] = cfg["vla"]["prompt"] or preset["prompt"]
-    if gate in ("left_gate", "right_gate") and not cfg["perturbations"].get("environment_means"):
+    gate_mask_path = Path(preset["gate_mask_path"])
+    gate_points_path = Path(preset["gate_points_path"])
+    table_points_path = Path(preset["table_points_path"])
+
+    if (
+        gate in ("left_gate", "right_gate")
+        and not cfg["perturbations"].get("environment_means")
+        and gate_mask_path.exists()
+        and gate_points_path.exists()
+        and table_points_path.exists()
+    ):
         cfg["perturbations"]["environment_means"] = [
             {
                 "type": "GateRigidTransform",
-                "gate_mask_path": preset["gate_mask_path"],
-                "gate_points_path": preset["gate_points_path"],
-                "table_points_path": preset["table_points_path"],
+                "gate_mask_path": str(gate_mask_path),
+                "gate_points_path": str(gate_points_path),
+                "table_points_path": str(table_points_path),
                 "max_match_distance_m": 0.01,
                 "max_translation_m": [0.04, 0.04, 0.02],
                 "yaw_range_deg": [-6.0, 6.0],
@@ -264,6 +294,55 @@ def convert_from_ned_to_zup(pos_ned: np.ndarray, perm: int = 5) -> np.ndarray:
         return np.array([x_n, y_n, -z_n])
 
 
+def build_figs_to_nerf_transform(
+    scene_key: str,
+    permutation: int,
+    config_yml_path: "str | Path | None" = None,
+) -> np.ndarray:
+    """Compose FiGS NED -> MOCAP Z-up -> COLMAP -> Nerfstudio-internal transform.
+
+    The nerfstudio training pipeline applies an additional dataparser transform
+    (stored in ``dataparser_transforms.json`` next to ``config.yml``) on top of
+    COLMAP, so the Gaussian means and the SplatNav voxel live in that *NS-internal*
+    frame.  When ``config_yml_path`` is provided we load and apply that extra step.
+    """
+    import json as _json
+
+    transformer = create_transformer_for_scene(scene_key)
+
+    # FiGS NED -> MOCAP Z-up (sign flip for perm=5)
+    t_figs_to_mocap = np.eye(4)
+    if permutation == 5:
+        t_figs_to_mocap[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    elif permutation == 0:
+        t_figs_to_mocap[:3, :3] = np.diag([1.0, 1.0, -1.0])
+    elif permutation == 2:
+        t_figs_to_mocap[:3, :3] = np.diag([-1.0, -1.0, -1.0])
+    else:
+        t_figs_to_mocap[:3, :3] = np.diag([1.0, 1.0, -1.0])
+
+    # MOCAP Z-up -> COLMAP  (Sim(3) inverse)
+    t_mocap_to_colmap = np.eye(4)
+    t_mocap_to_colmap[:3, :3] = transformer.s_inv * transformer.R_inv
+    t_mocap_to_colmap[:3, 3] = transformer.t_inv
+
+    T = t_mocap_to_colmap @ t_figs_to_mocap
+
+    # COLMAP -> Nerfstudio-internal  (dataparser_transforms.json)
+    if config_yml_path is not None:
+        dp_path = Path(config_yml_path).parent / "dataparser_transforms.json"
+        if dp_path.exists():
+            dp = _json.loads(dp_path.read_text())
+            dp_mat = np.array(dp["transform"])   # (3, 4)
+            dp_scale = float(dp["scale"])
+            t_colmap_to_ns = np.eye(4)
+            t_colmap_to_ns[:3, :3] = dp_scale * dp_mat[:, :3]
+            t_colmap_to_ns[:3, 3] = dp_scale * dp_mat[:, 3]
+            T = t_colmap_to_ns @ T
+
+    return T
+
+
 # ===================================================================
 # Main
 # ===================================================================
@@ -291,6 +370,17 @@ def main():
     cfg = load_config(args.config)
     cfg = apply_gate_preset(cfg, args.gate)
 
+    preset = GATE_PRESETS[args.gate]
+    gate_artifacts_present = all(
+        Path(preset[key]).exists()
+        for key in ("gate_mask_path", "gate_points_path", "table_points_path")
+    )
+    if not gate_artifacts_present:
+        print(
+            "Gate perturbation artifacts not found locally; "
+            "running without gate rigid-transform perturbations."
+        )
+
     if args.num_episodes is not None:
         cfg["campaign"]["num_episodes"] = args.num_episodes
     if args.seed is not None:
@@ -314,6 +404,8 @@ def main():
 
     perm = cfg["simulation"]["permutation"]
     scene_key = cfg["scene"]["scene_key"]
+    config_yml_path = Path(cfg["scene"]["config_yml"])
+    t_figs_to_nerf = build_figs_to_nerf_transform(scene_key, perm, config_yml_path)
 
     # ---- Coordinate conversion ----
     start_ned = convert_to_ned(cfg["simulation"]["start_position_zup"], perm)
@@ -368,10 +460,16 @@ def main():
                 robot_radius=cfg["recovery"]["robot_radius"],
                 vmax=cfg["recovery"]["vmax"],
                 amax=cfg["recovery"]["amax"],
+                env_lower_bound=cfg["recovery"].get("env_lower_bound", [-0.5, -0.5, -0.5]),
+                env_upper_bound=cfg["recovery"].get("env_upper_bound", [0.5, 0.5, 0.5]),
+                voxel_resolution=cfg["recovery"].get("voxel_resolution", 150),
+                gate_position=gate_ned.tolist(),
+                gate_pass_radius_m=cfg["simulation"]["gate_pass_radius_m"],
             )
             splatnav_rec = SplatNavRecovery(
                 gsplat_path=splatnav_path,
                 config=rec_cfg,
+                coordinate_transform=t_figs_to_nerf,
             )
         else:
             print("SplatNav config.yml not found; recovery planning disabled.")
@@ -413,10 +511,15 @@ def main():
         bounds_upper=cfg["safety"]["bounds_upper"],
         max_speed=cfg["safety"]["max_speed"],
         max_tilt_deg=cfg["safety"]["max_tilt_deg"],
+        robot_radius=cfg["safety"]["robot_radius"],
+        gate_opening_half_w=GATE_PRESETS[args.gate]["gate_opening_half_w"],
+        gate_opening_half_h=GATE_PRESETS[args.gate]["gate_opening_half_h"],
+        gate_post_radius=GATE_PRESETS[args.gate]["gate_post_radius"],
         safe_horizon=cfg["safety"]["safe_horizon"],
         enable_recovery=cfg["recovery"]["enable"],
         recovery_total_time=cfg["recovery"]["recovery_total_time"],
         permutation=perm,
+        coordinate_transform_figs_to_nerf=t_figs_to_nerf,
     )
 
     orchestrator = FalsificationOrchestrator(
@@ -545,6 +648,7 @@ def main():
             ep_meta["recovery"] = {
                 "feasible": ep.recovery_result.feasible,
                 "planning_time_s": ep.recovery_result.planning_time_s,
+                "validation": ep.recovery_result.metadata,
             }
 
         with open(ep_dir / "metadata.json", "w") as f:

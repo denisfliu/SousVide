@@ -1,0 +1,11 @@
+simulation:
+  tf: 100.0
+  gate_pass_radius_m: 0.20
+
+perturbations:
+  action: []
+  observation_image: []
+  observation_state: []
+  observation_camera: []
+  environment_scales: []
+  environment_opacities: []

@@ -86,7 +86,8 @@ class ActionBias(Perturbation):
         self._bias = np.zeros(4)
 
     def reset(self, rng: np.random.RandomState) -> None:
-        lo, hi = self.cfg.bias_range[:, 0], self.cfg.bias_range[:, 1]
+        bias_range = np.asarray(self.cfg.bias_range, dtype=float)
+        lo, hi = bias_range[:, 0], bias_range[:, 1]
         self._bias = rng.uniform(lo, hi)
 
     def apply(self, action: np.ndarray) -> np.ndarray:

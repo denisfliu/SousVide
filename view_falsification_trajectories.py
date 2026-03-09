@@ -28,6 +28,7 @@ from threading import Lock
 
 import numpy as np
 import viser
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 from coordinate_transform import create_transformer_for_scene
@@ -38,6 +39,7 @@ from nerfstudio.pipelines.base_pipeline import Pipeline
 from nerfstudio.utils import writer
 from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.viewer.viewer import Viewer as ViewerState
+from sousvide.falsification.perturbations import build_perturbation_suite
 
 
 # Trajectory colors (0-255 RGB for viser 0.1.x)
@@ -47,6 +49,7 @@ TRAJECTORY_COLORS = {
     'recovery_plan':  (25, 200, 100),   # green (SplatNav planned path)
     'recovery_figs':  (150, 50, 230),   # purple (FiGS rollout of recovery)
     'success':        (50, 130, 230),   # blue (completed trajectory)
+    'reference_safe': (255, 215, 0),    # gold (reference start->gate->goal path)
 }
 
 
@@ -60,6 +63,77 @@ CONFIG_PATHS = {
     'left_gate': _REPO_ROOT / "left_gate_9_24_2025_COLMAP" / "sagesplat" / "2025-10-06_215922" / "config.yml",
     'right_gate': _REPO_ROOT / "right_gate_9_30_2025_COLMAP" / "sagesplat" / "2025-10-01_103533" / "config.yml",
 }
+
+
+def apply_episode_perturbation(pipeline: Pipeline, results_dir: Path, episode_id: int) -> dict:
+    """Reapply the recorded environment perturbation for a falsification episode."""
+    config_path = results_dir / "config.yaml"
+    episode_dir = results_dir / "episodes" / f"episode_{episode_id:05d}"
+    metadata_path = episode_dir / "metadata.json"
+
+    if not config_path.exists():
+        raise FileNotFoundError(f"Missing falsification config: {config_path}")
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"Missing episode metadata: {metadata_path}")
+
+    with open(config_path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    with open(metadata_path, encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    seed = int(metadata["seed"])
+    suite = build_perturbation_suite(cfg["perturbations"])
+    suite.reset_all(seed)
+
+    model = pipeline.model
+    result: dict = {"episode_id": episode_id, "seed": seed}
+
+    if len(suite.environment_means) > 0:
+        means_out = model.means.data
+        quats_out = model.quats.data
+        for perturb in suite.environment_means.perturbations:
+            means_out = perturb.apply(means_out)
+            if hasattr(perturb, "apply_quats"):
+                quats_out = perturb.apply_quats(quats_out)
+            if getattr(perturb, "_translation", None) is not None:
+                result["translation_xyz_m"] = np.asarray(perturb._translation).tolist()
+            if getattr(perturb, "_yaw_rad", None) is not None:
+                result["yaw_deg"] = float(np.degrees(perturb._yaw_rad))
+        model.means.data = means_out
+        model.quats.data = quats_out
+        result["applied"] = True
+    else:
+        result["applied"] = False
+
+    return result
+
+
+def load_reference_safe_path(results_dir: Path, perturb_info: dict | None = None) -> np.ndarray | None:
+    """Build a simple reference path from configured start -> gate -> goal."""
+    config_path = results_dir / "config.yaml"
+    if not config_path.exists():
+        return None
+
+    with open(config_path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    sim_cfg = cfg.get("simulation", {})
+    start = sim_cfg.get("start_position_zup")
+    gate = sim_cfg.get("gate_position_zup")
+    goal = sim_cfg.get("goal_position_zup")
+    if start is None or gate is None or goal is None:
+        return None
+
+    start = np.asarray(start, dtype=float)
+    gate = np.asarray(gate, dtype=float)
+    goal = np.asarray(goal, dtype=float)
+
+    # When the scene is perturbed, shift the gate waypoint by the recorded
+    # sampled translation so the reference path passes through the displayed gate.
+    if perturb_info and perturb_info.get("applied") and perturb_info.get("translation_xyz_m") is not None:
+        gate = gate + np.asarray(perturb_info["translation_xyz_m"], dtype=float)
+
+    return np.vstack([start, gate, goal])
 
 
 # ===================================================================
@@ -116,22 +190,24 @@ def load_falsification_trajectories(results_dir: Path, episode_ids=None,
             data = np.load(fpath)
             traj["failure_positions_mocap"] = data["positions_mocap"]
 
-        # Read last_safe_step from metadata
+        # Read last_safe_step from metadata; check recovery feasibility
         ep_dir = Path(fpath).parent if fpath else None
+        recovery_feasible = False
         if ep_dir and (ep_dir / "metadata.json").exists():
             with open(ep_dir / "metadata.json") as f:
                 meta = json.load(f)
             fail_info = meta.get("failure", {})
             traj["last_safe_step"] = fail_info.get("last_safe_step")
+            recovery_feasible = bool(meta.get("recovery", {}).get("feasible", False))
 
-        # Recovery planned trajectory (MOCAP)
+        # Recovery planned trajectory (MOCAP) – only show if feasible
         rpath = entry.get("recovery_trajectory_mocap")
-        if rpath and Path(rpath).exists():
+        if recovery_feasible and rpath and Path(rpath).exists():
             traj["recovery_positions_mocap"] = np.load(rpath)
 
-        # Recovery FiGS rollout (MOCAP)
+        # Recovery FiGS rollout (MOCAP) – only show if feasible
         rfpath = entry.get("recovery_figs_mocap")
-        if rfpath and Path(rfpath).exists():
+        if recovery_feasible and rfpath and Path(rfpath).exists():
             data = np.load(rfpath)
             traj["recovery_figs_positions_mocap"] = data["positions_mocap"]
 
@@ -147,7 +223,8 @@ def load_falsification_trajectories(results_dir: Path, episode_ids=None,
 
 def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list,
                                     scene_name: str, config_path: Path = None,
-                                    bbox_interval: int = 50):
+                                    bbox_interval: int = 50,
+                                    reference_safe_path_mocap: np.ndarray | None = None):
     """Overlay failure + recovery trajectories on the GSplat viewer."""
     print(f"\nLoading {len(trajectories)} falsification trajectories for {scene_name}...")
 
@@ -188,6 +265,44 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             radius=radius,
             color=color,
             position=tuple(position),
+        )
+
+    def to_viewer(positions_mocap):
+        out = []
+        for p in positions_mocap:
+            if transformer:
+                p_colmap = transformer.mocap_to_colmap_position(p)
+            else:
+                p_colmap = p
+            out.append(p_colmap)
+        return np.array(out)
+
+    if reference_safe_path_mocap is not None and len(reference_safe_path_mocap) > 1:
+        ref_v = to_viewer(reference_safe_path_mocap)
+        _add_spline(
+            "/falsification/reference_safe",
+            ref_v,
+            TRAJECTORY_COLORS["reference_safe"],
+            4.0,
+        )
+        _add_marker(
+            "/falsification/reference_safe_gate",
+            ref_v[1],
+            TRAJECTORY_COLORS["reference_safe"],
+            0.03,
+        )
+        print("  Reference safe path:", flush=True)
+        print(
+            f"    Start (MOCAP): [{reference_safe_path_mocap[0][0]:.4f}, {reference_safe_path_mocap[0][1]:.4f}, {reference_safe_path_mocap[0][2]:.4f}]",
+            flush=True,
+        )
+        print(
+            f"    Gate  (MOCAP): [{reference_safe_path_mocap[1][0]:.4f}, {reference_safe_path_mocap[1][1]:.4f}, {reference_safe_path_mocap[1][2]:.4f}]",
+            flush=True,
+        )
+        print(
+            f"    Goal  (MOCAP): [{reference_safe_path_mocap[2][0]:.4f}, {reference_safe_path_mocap[2][1]:.4f}, {reference_safe_path_mocap[2][2]:.4f}]",
+            flush=True,
         )
 
     # Drone physical dimensions (metres)
@@ -246,17 +361,6 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
         eid = traj["episode_id"]
         prefix = f"/falsification/ep_{eid:05d}"
 
-        # --- helper to transform MOCAP → viewer coords ---
-        def to_viewer(positions_mocap):
-            out = []
-            for p in positions_mocap:
-                if transformer:
-                    p_colmap = transformer.mocap_to_colmap_position(p)
-                else:
-                    p_colmap = p
-                out.append(p_colmap)
-            return np.array(out)
-
         # --- Failure trajectory ---
         fpos = traj.get("failure_positions_mocap")
         if fpos is not None and len(fpos) > 1:
@@ -265,18 +369,23 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             last_safe = traj.get("last_safe_step")
             if last_safe is not None and last_safe > 0 and not traj["success"]:
                 safe_end = min(last_safe + 1, len(fpos_v))
-
-                if safe_end > 1:
-                    _add_spline(f"{prefix}/safe_prefix",
-                                fpos_v[:safe_end],
-                                TRAJECTORY_COLORS['failure_safe'], 5.0)
                 if safe_end < len(fpos_v):
+                    if safe_end > 1:
+                        _add_spline(f"{prefix}/safe_prefix",
+                                    fpos_v[:safe_end],
+                                    TRAJECTORY_COLORS['failure_safe'], 5.0)
                     _add_spline(f"{prefix}/failure_suffix",
                                 fpos_v[safe_end - 1:],
                                 TRAJECTORY_COLORS['failure'], 5.0)
-                _add_marker(f"{prefix}/last_safe",
-                            fpos_v[safe_end - 1],
-                            TRAJECTORY_COLORS['failure_safe'], 0.025)
+                    _add_marker(f"{prefix}/last_safe",
+                                fpos_v[safe_end - 1],
+                                TRAJECTORY_COLORS['failure_safe'], 0.025)
+                else:
+                    # If a failed trajectory claims the final point is still safe,
+                    # don't render the whole thing as blue; that metadata is
+                    # ambiguous/stale for visualization purposes.
+                    _add_spline(f"{prefix}/trajectory",
+                                fpos_v, TRAJECTORY_COLORS['failure'], 5.0)
             else:
                 color_key = 'success' if traj["success"] else 'failure'
                 _add_spline(f"{prefix}/trajectory",
@@ -340,7 +449,10 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
 # ===================================================================
 
 def start_viewer(config_path: Path, scene_name: str, trajectories: list,
-                 websocket_port: int = 7007, bbox_interval: int = 50):
+                 websocket_port: int = 7007, bbox_interval: int = 50,
+                 results_dir: Path | None = None,
+                 perturb_episode_id: int | None = None,
+                 show_reference_safe: bool = False):
     """Start nerfstudio viewer and overlay falsification trajectories."""
     print(f"Starting viewer for {scene_name}...")
     print(f"  Config: {config_path}")
@@ -350,6 +462,28 @@ def start_viewer(config_path: Path, scene_name: str, trajectories: list,
         eval_num_rays_per_chunk=None,
         test_mode="test",
     )
+
+    perturb_info = None
+    if perturb_episode_id is not None:
+        if results_dir is None:
+            raise ValueError("results_dir is required when perturb_episode_id is set.")
+        perturb_info = apply_episode_perturbation(pipeline, results_dir, perturb_episode_id)
+        if perturb_info.get("applied"):
+            print(
+                "  Applied episode perturbation: "
+                f"episode={perturb_info['episode_id']} seed={perturb_info['seed']} "
+                f"translation={perturb_info.get('translation_xyz_m')} "
+                f"yaw_deg={perturb_info.get('yaw_deg')}"
+            )
+        else:
+            print(
+                "  Episode perturbation requested, but no environment perturbations "
+                f"were configured for episode {perturb_episode_id}."
+            )
+
+    reference_safe_path = None
+    if show_reference_safe and results_dir is not None:
+        reference_safe_path = load_reference_safe_path(results_dir, perturb_info)
 
     config.vis = "viewer"
     config.viewer.websocket_port = websocket_port
@@ -387,10 +521,14 @@ def start_viewer(config_path: Path, scene_name: str, trajectories: list,
         add_falsification_trajectories(
             viewer_state, trajectories, scene_name, config_path,
             bbox_interval=bbox_interval,
+            reference_safe_path_mocap=reference_safe_path,
         )
 
     print(f"\nViewer ready! Press Ctrl+C to exit.")
-    print(f"  Legend:  blue=safe prefix  red=failure  green=recovery plan  purple=recovery rollout")
+    legend = "  Legend:  blue=safe prefix  red=failure  green=recovery plan  purple=recovery rollout"
+    if show_reference_safe:
+        legend = "  Legend:  gold=reference safe path  blue=safe prefix  red=failure  green=recovery plan  purple=recovery rollout"
+    print(legend)
     sys.stdout.flush()
 
     try:
@@ -432,6 +570,10 @@ Examples:
                         help="Websocket port for viewer")
     parser.add_argument("--bbox-interval", type=int, default=50,
                         help="Show drone bounding box every N steps (0 to disable)")
+    parser.add_argument("--apply-episode-perturbation", type=int, default=None,
+                        help="Reapply the selected episode's recorded environment perturbation to the scene")
+    parser.add_argument("--show-reference-safe", action="store_true",
+                        help="Also show the simple start->gate->goal reference path")
     args = parser.parse_args()
 
     # Load trajectories
@@ -447,6 +589,14 @@ Examples:
 
     print(f"Loaded {len(trajectories)} episodes for scene '{scene_key}'")
 
+    if args.apply_episode_perturbation is not None:
+        if args.episode and args.apply_episode_perturbation not in set(args.episode):
+            print("--apply-episode-perturbation must refer to one of the selected --episode IDs.")
+            return
+        if len(trajectories) != 1:
+            print("Select exactly one episode with --episode when using --apply-episode-perturbation.")
+            return
+
     # Resolve config path
     config_path = args.load_config
     if config_path is None:
@@ -461,6 +611,9 @@ Examples:
         trajectories=trajectories,
         websocket_port=args.port,
         bbox_interval=args.bbox_interval,
+        results_dir=args.results_dir,
+        perturb_episode_id=args.apply_episode_perturbation,
+        show_reference_safe=args.show_reference_safe,
     )
 
 

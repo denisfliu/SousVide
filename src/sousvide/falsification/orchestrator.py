@@ -17,6 +17,7 @@ configs and aggregates results.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +42,7 @@ from sousvide.falsification.failure_detector import (
     BoundsCriterion,
     VelocityCriterion,
     TiltCriterion,
+    ProximityCollisionCriterion,
 )
 from sousvide.falsification.perturbations import PerturbationSuite
 from sousvide.falsification.splatnav_recovery import (
@@ -100,6 +102,10 @@ class OrchestratorConfig:
     bounds_upper: List[float] = field(default_factory=lambda: [5, 5, 5])
     max_speed: float = 5.0
     max_tilt_deg: float = 60.0
+    robot_radius: float = 0.225
+    gate_opening_half_w: float = 0.25
+    gate_opening_half_h: float = 0.25
+    gate_post_radius: float = 0.04
 
     # Failure detector
     safe_horizon: int = 3
@@ -182,6 +188,9 @@ class FalsificationOrchestrator:
             VelocityCriterion(max_speed=cfg.max_speed),
             TiltCriterion(max_tilt_deg=cfg.max_tilt_deg),
         ]
+        gate_collision_criterion = self._build_gate_collision_criterion()
+        if gate_collision_criterion is not None:
+            criteria.append(gate_collision_criterion)
         detector = FailureDetector(criteria=criteria, safe_horizon=cfg.safe_horizon)
 
         # --- Run VLA in FiGS --------------------------------------------------
@@ -207,11 +216,19 @@ class FalsificationOrchestrator:
                 trajectory_up_to_failure=list(trajectory),
             )
 
+        goal_ned = np.array(cfg.goal_position)
+        start_snap = trajectory[0] if trajectory else None
+        start_ned = np.array(start_snap.state[:3]) if start_snap else goal_ned
+        start_state_ned = np.array(start_snap.state) if start_snap else None
+        perturbed_gate_ned = self._get_perturbed_gate_position_figs()
+
         if failure_record is not None:
             if cfg.enable_recovery and self.recovery is not None:
-                recovery_result = self.recovery.plan_recovery(
-                    failure_record,
-                    goal_position_figs=np.array(cfg.goal_position),
+                recovery_result = self.recovery.plan_via_gate(
+                    start_position_figs=start_ned,
+                    gate_position_figs=perturbed_gate_ned,
+                    goal_position_figs=goal_ned,
+                    start_state_figs=start_state_ned,
                 )
 
                 if cfg.recovery_rollout and recovery_result.feasible:
@@ -238,9 +255,11 @@ class FalsificationOrchestrator:
                     },
                 )
                 if cfg.enable_recovery and self.recovery is not None:
-                    recovery_result = self.recovery.plan_recovery(
-                        failure_record,
-                        goal_position_figs=np.array(cfg.goal_position),
+                    recovery_result = self.recovery.plan_via_gate(
+                        start_position_figs=start_ned,
+                        gate_position_figs=perturbed_gate_ned,
+                        goal_position_figs=goal_ned,
+                        start_state_figs=start_state_ned,
                     )
                     if cfg.recovery_rollout and recovery_result.feasible:
                         recovery_figs = self._rollout_recovery(recovery_result)
@@ -251,7 +270,7 @@ class FalsificationOrchestrator:
         return FalsificationEpisode(
             episode_id=episode_id,
             seed=seed,
-            success=not detector.is_failed,
+            success=failure_record is None,
             trajectory=trajectory,
             failure_record=failure_record,
             recovery_result=recovery_result,
@@ -441,6 +460,60 @@ class FalsificationOrchestrator:
 
         return backup
 
+    def _build_gate_collision_criterion(self) -> ProximityCollisionCriterion | None:
+        """Build a gate-frame collision check that follows the sampled gate perturbation."""
+        cfg = self.config
+        if cfg.coordinate_transform_figs_to_nerf is None:
+            return None
+
+        # Base gate-frame spheres in FiGS/NED coordinates.
+        cx, cy, cz = np.asarray(cfg.gate_position, dtype=float)
+        hw = float(cfg.gate_opening_half_w)
+        hh = float(cfg.gate_opening_half_h)
+        base_centers_figs = np.array(
+            [
+                [cx, cy - hw, cz],
+                [cx, cy + hw, cz],
+                [cx, cy, cz + hh],
+                [cx, cy, cz - hh],
+                [cx, cy - hw, cz + hh],
+                [cx, cy + hw, cz + hh],
+                [cx, cy - hw, cz - hh],
+                [cx, cy + hw, cz - hh],
+            ],
+            dtype=float,
+        )
+
+        t_figs_to_nerf = np.asarray(cfg.coordinate_transform_figs_to_nerf, dtype=float)
+        t_nerf_to_figs = np.linalg.inv(t_figs_to_nerf)
+        base_centers_nerf = np.array(
+            [(t_figs_to_nerf @ np.append(p, 1.0))[:3] for p in base_centers_figs],
+            dtype=float,
+        )
+        gate_center_nerf = (t_figs_to_nerf @ np.append(np.asarray(cfg.gate_position, dtype=float), 1.0))[:3]
+
+        transformed_centers_nerf = base_centers_nerf
+        for perturb in self.perturbations.environment_means.perturbations:
+            translation = getattr(perturb, "_translation", None)
+            rotation = getattr(perturb, "_rotation_np", None)
+            if translation is None or rotation is None:
+                continue
+            transformed_centers_nerf = (
+                (transformed_centers_nerf - gate_center_nerf[None, :]) @ rotation.T
+                + gate_center_nerf[None, :]
+                + np.asarray(translation, dtype=float)[None, :]
+            )
+
+        transformed_centers_figs = np.array(
+            [(t_nerf_to_figs @ np.append(p, 1.0))[:3] for p in transformed_centers_nerf],
+            dtype=float,
+        )
+        obstacles = [(center, float(cfg.gate_post_radius)) for center in transformed_centers_figs]
+        return ProximityCollisionCriterion(
+            obstacles=obstacles,
+            robot_radius=float(cfg.robot_radius),
+        )
+
     def _restore_env(self, backup: Dict[str, Any]) -> None:
         """Restore Gaussian splat parameters from backup."""
         if not backup:
@@ -454,6 +527,39 @@ class FalsificationOrchestrator:
             model.scales.data = backup["scales"]
         if "opacities" in backup:
             model.opacities.data = backup["opacities"]
+
+    def _get_perturbed_gate_position_figs(self) -> np.ndarray:
+        """Return the perturbed gate centre in FiGS (NED) coordinates.
+
+        Applies the same rotation+translation that ``_build_gate_collision_criterion``
+        applies to the individual gate obstacle spheres, but to the scalar gate
+        centre point.  If no coordinate transform is available, returns the
+        nominal gate position.
+        """
+        cfg = self.config
+        nominal_figs = np.asarray(cfg.gate_position, dtype=float)
+        if cfg.coordinate_transform_figs_to_nerf is None:
+            return nominal_figs
+
+        t_figs_to_nerf = np.asarray(cfg.coordinate_transform_figs_to_nerf, dtype=float)
+        t_nerf_to_figs = np.linalg.inv(t_figs_to_nerf)
+
+        gate_nerf = (t_figs_to_nerf @ np.append(nominal_figs, 1.0))[:3]
+        perturbed_nerf = gate_nerf.copy()
+
+        for perturb in self.perturbations.environment_means.perturbations:
+            translation = getattr(perturb, "_translation", None)
+            rotation    = getattr(perturb, "_rotation_np", None)
+            if translation is None or rotation is None:
+                continue
+            # Rotate around the gate centre, then translate
+            perturbed_nerf = (
+                rotation @ (perturbed_nerf - gate_nerf)
+                + gate_nerf
+                + np.asarray(translation, dtype=float)
+            )
+
+        return (t_nerf_to_figs @ np.append(perturbed_nerf, 1.0))[:3]
 
     def _trajectory_passes_gate(self, trajectory: List[StateSnapshot]) -> bool:
         """Returns True if any state gets sufficiently close to the gate."""
@@ -512,11 +618,22 @@ class FalsificationOrchestrator:
             },
         }
 
-        controller = VehicleRateMPC(
-            policy=policy_cfg,
-            course=course_config,
-            frame=cfg.frame_name,
-        )
+        # Build the recovery MPC in an isolated temp directory so its compiled
+        # ACADOS shared library (.so) doesn't collide with the VLA policy's
+        # already-loaded solver (Linux dlopen caches by path; both would
+        # otherwise write to the same ./c_generated_code/ path).
+        import tempfile
+        _orig_cwd = os.getcwd()
+        _tmp_dir = tempfile.mkdtemp(prefix="recovery_mpc_")
+        try:
+            os.chdir(_tmp_dir)
+            controller = VehicleRateMPC(
+                policy=policy_cfg,
+                course=course_config,
+                frame=cfg.frame_name,
+            )
+        finally:
+            os.chdir(_orig_cwd)
 
         safe_state = recovery_result.safe_state.state
         t0 = 0.0
