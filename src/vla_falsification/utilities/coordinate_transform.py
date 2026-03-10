@@ -244,39 +244,44 @@ def build_camera_transforms(
     forward_offset: float = -0.05,
     downward_offset: float = -0.05,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Build the dual-camera body-to-camera transforms for the standard drone setup.
+    """Build the dual-camera camera-to-body transforms for the standard drone setup.
+
+    Camera convention (OpenGL/nerfstudio): +x right, +y up, +z backward.
+    Body convention (NED): +x forward, +y right, +z down.
+
+    Forward camera: looks along body +x (forward).
+    Downward camera: forward camera rotated -90 deg about camera x (looks down).
 
     Returns
     -------
     Tc2b_forward : (4, 4) array
     Tc2b_downward : (4, 4) array
     """
-    # Forward camera
-    Tc2b_forward_base = np.array([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0, 0.0],
-        [0.0, -1.0, 0.0, forward_offset],
-        [0.0, 0.0, 0.0, 1.0],
+    # Forward camera: cam_x->body_y, cam_y->body_-z, cam_z->body_-x
+    Tc2b_base = np.eye(4)
+    Tc2b_base[:3, :3] = np.array([
+        [0, 0, -1],
+        [1, 0,  0],
+        [0, -1, 0],
     ])
-    R_z_180 = np.eye(4)
-    R_z_180[:3, :3] = np.diag([-1.0, -1.0, 1.0])
-    R_y_180 = np.eye(4)
-    R_y_180[:3, :3] = np.diag([-1.0, 1.0, -1.0])
-    R_y_90 = np.eye(4)
-    R_y_90[:3, :3] = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0.0]])
-    Tc2b_forward = Tc2b_forward_base @ R_z_180 @ R_y_180 @ R_y_90
+    Tc2b_base[2, 3] = forward_offset
 
-    # Downward camera
-    Tc2b_downward_base = np.array([
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, -1.0, 0.0, 0.0],
-        [0.0, 0.0, -1.0, downward_offset],
-        [0.0, 0.0, 0.0, 1.0],
+    # +90 deg about camera z to correct orientation
+    Rz_pos90 = np.eye(4)
+    Rz_pos90[:3, :3] = np.array([
+        [0, -1, 0],
+        [1,  0, 0],
+        [0,  0, 1],
     ])
-    R_x_180 = np.eye(4)
-    R_x_180[:3, :3] = np.diag([1.0, -1.0, -1.0])
-    R_z_90 = np.eye(4)
-    R_z_90[:3, :3] = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1.0]])
-    Tc2b_downward = Tc2b_downward_base @ R_x_180 @ R_z_90
+    Tc2b_forward = Tc2b_base @ Rz_pos90
+
+    # Downward camera: forward camera rotated -90 deg about camera x
+    Rx_neg90 = np.eye(4)
+    Rx_neg90[:3, :3] = np.array([
+        [1,  0, 0],
+        [0,  0, 1],
+        [0, -1, 0],
+    ])
+    Tc2b_downward = Tc2b_forward @ Rx_neg90
 
     return Tc2b_forward, Tc2b_downward

@@ -23,44 +23,16 @@ sys.path.insert(0, str(_REPO_ROOT / "external" / "FiGS" / "src"))
 
 from vla_falsification.falsification.config import GATE_PRESETS
 from vla_falsification.falsification.perturbations import build_perturbation_suite
+from vla_falsification.utilities.coordinate_transform import (
+    build_camera_transforms,
+    create_transformer_for_scene,
+    _get_perm_diag,
+)
 
 import figs.utilities.config_helper as ch
 import figs.utilities.transform_helper as th
 import figs.dynamics.quadcopter_specifications as qs
 from figs.render.gsplat import GSplat
-
-
-def _camera_transforms():
-    tc2b_forward_base = np.array(
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, -1.0, 0.0, -0.05],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
-    r_z_180 = np.eye(4)
-    r_z_180[:3, :3] = np.diag([-1.0, -1.0, 1.0])
-    r_y_180 = np.eye(4)
-    r_y_180[:3, :3] = np.diag([-1.0, 1.0, -1.0])
-    r_y_90 = np.eye(4)
-    r_y_90[:3, :3] = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0.0]])
-    tc2b_forward = tc2b_forward_base @ r_z_180 @ r_y_180 @ r_y_90
-
-    tc2b_downward_base = np.array(
-        [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0, -0.05],
-            [0.0, 0.0, 0.0, 1.0],
-        ]
-    )
-    r_x_180 = np.eye(4)
-    r_x_180[:3, :3] = np.diag([1.0, -1.0, -1.0])
-    r_z_90_d = np.eye(4)
-    r_z_90_d[:3, :3] = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1.0]])
-    tc2b_downward = tc2b_downward_base @ r_x_180 @ r_z_90_d
-    return tc2b_forward, tc2b_downward
 
 
 def _apply_environment_perturbations(gsplat: GSplat, perturbation_cfg: dict, seed: int) -> dict:
@@ -127,7 +99,12 @@ def main() -> None:
     spec = qs.generate_specifications(frame_dict)
     camera_fwd = gsplat.generate_output_camera(spec["camera"])
     camera_dwn = gsplat.generate_output_camera(spec["camera"])
-    tc2b_forward, tc2b_downward = _camera_transforms()
+    tc2b_forward, tc2b_downward = build_camera_transforms()
+
+    # Coordinate transform chain: NED -> MOCAP -> COLMAP
+    perm = cfg["simulation"]["permutation"]
+    P = _get_perm_diag(perm)
+    transformer = create_transformer_for_scene(cfg["scene"]["scene_key"])
 
     perturbation_info = _apply_environment_perturbations(gsplat, cfg["perturbations"], seed)
 
@@ -145,11 +122,17 @@ def main() -> None:
 
     for idx in indices:
         xcr = states[idx]
-        tb2w = th.x_to_T(xcr)
-        tc2w_fwd = tb2w @ tc2b_forward
-        tc2w_dwn = tb2w @ tc2b_downward
-        rgb_fwd, _ = gsplat.render_rgb(camera_fwd, tc2w_fwd)
-        rgb_dwn, _ = gsplat.render_rgb(camera_dwn, tc2w_dwn)
+        # NED body-to-world
+        tb2w_ned = th.x_to_T(xcr)
+        # NED -> MOCAP: flip y, z on position only
+        tb2w_mocap = tb2w_ned.copy()
+        tb2w_mocap[:3, 3] = P @ tb2w_ned[:3, 3]
+        # Camera-to-world in MOCAP, then MOCAP -> COLMAP
+        tc2w_fwd_colmap = transformer.mocap_to_colmap_pose(tb2w_mocap @ tc2b_forward)
+        tc2w_dwn_colmap = transformer.mocap_to_colmap_pose(tb2w_mocap @ tc2b_downward)
+        # render_rgb applies Tw2g (COLMAP -> nerfstudio) internally
+        rgb_fwd, _ = gsplat.render_rgb(camera_fwd, tc2w_fwd_colmap)
+        rgb_dwn, _ = gsplat.render_rgb(camera_dwn, tc2w_dwn_colmap)
         forward_frames.append(rgb_fwd)
         downward_frames.append(rgb_dwn)
 
