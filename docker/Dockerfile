@@ -27,10 +27,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 
 # Copy submodule manifests so editable installs resolve
-COPY FiGS/pyproject.toml FiGS/setup.py FiGS/setup.cfg FiGS/README.md FiGS/
-COPY FiGS/src/ FiGS/src/
-COPY FiGS/acados/ FiGS/acados/
-COPY FiGS/Hierarchical-Localization/ FiGS/Hierarchical-Localization/
+COPY external/FiGS/pyproject.toml external/FiGS/setup.py external/FiGS/setup.cfg external/FiGS/README.md external/FiGS/
+COPY external/FiGS/src/ external/FiGS/src/
+COPY external/FiGS/acados/ external/FiGS/acados/
+COPY external/FiGS/Hierarchical-Localization/ external/FiGS/Hierarchical-Localization/
 COPY external/splatnav/ external/splatnav/
 COPY external/Splat-MOVER/ external/Splat-MOVER/
 
@@ -63,16 +63,16 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/configs /app/configs
 COPY --from=builder /app/artifacts /app/artifacts
-COPY --from=builder /app/FiGS /app/FiGS
+COPY --from=builder /app/external/FiGS /app/external/FiGS
 COPY --from=builder /app/external /app/external
 COPY --from=builder /app/run_falsification.py /app/
 COPY --from=builder /app/view_falsification_trajectories.py /app/
 COPY --from=builder /app/scripts /app/scripts
 
 ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONPATH="/app/src:/app/FiGS/src:/app/external/splatnav"
-ENV LD_LIBRARY_PATH="/app/FiGS/acados/lib"
-ENV ACADOS_SOURCE_DIR="/app/FiGS/acados"
+ENV PYTHONPATH="/app/src:/app/external/FiGS/src:/app/external/splatnav"
+ENV LD_LIBRARY_PATH="/app/external/FiGS/acados/lib"
+ENV ACADOS_SOURCE_DIR="/app/external/FiGS/acados"
 
 ENTRYPOINT ["python", "run_falsification.py"]
 CMD ["--help"]

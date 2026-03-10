@@ -1,5 +1,5 @@
 """
-Coordinate transformation utilities for the SousVide falsification framework.
+Coordinate transformation utilities for the VLA falsification framework.
 
 Handles conversions between:
 - FiGS NED (North-East-Down): dynamics simulation frame

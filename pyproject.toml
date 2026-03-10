@@ -111,9 +111,9 @@ lightglue    = { git = "https://github.com/cvg/LightGlue" }
 clip         = { git = "https://github.com/openai/CLIP.git" }
 
 # Local editable installs
-figs            = { path = "./FiGS",                                                    editable = true }
-acados-template = { path = "./FiGS/acados/interfaces/acados_template",                 editable = true }
-hloc            = { path = "./FiGS/Hierarchical-Localization",                         editable = true }
+figs            = { path = "./external/FiGS",                                            editable = true }
+acados-template = { path = "./external/FiGS/acados/interfaces/acados_template",         editable = true }
+hloc            = { path = "./external/FiGS/Hierarchical-Localization",                 editable = true }
 splatnav        = { path = "./external/splatnav",                                      editable = true }
 sagesplat       = { path = "./external/Splat-MOVER",                                   editable = true }
 

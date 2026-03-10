@@ -9,15 +9,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup & Environment
 
 ```bash
-# Prerequisites: CUDA 11.8 toolkit, COLMAP, acados (built locally in FiGS/acados/)
+# Prerequisites: CUDA 11.8 toolkit, COLMAP, acados (built locally in external/FiGS/acados/)
 git submodule update --recursive --init
 uv sync                    # installs all deps including PyTorch CUDA 12.1, tiny-cuda-nn from source
 source .venv/bin/activate
 ```
 
 Required environment variables (typically in ~/.zshrc):
-- `LD_LIBRARY_PATH` must include `FiGS/acados/lib`
-- `ACADOS_SOURCE_DIR` pointing to `FiGS/acados/`
+- `LD_LIBRARY_PATH` must include `external/FiGS/acados/lib`
+- `ACADOS_SOURCE_DIR` pointing to `external/FiGS/acados/`
 - `CUDA_HOME` pointing to local CUDA 11.8 install
 
 Run tests with:
@@ -55,9 +55,9 @@ The core research contribution. Systematically stress-tests VLA policies:
 
 ### Git Submodules
 
-- **FiGS/** (`FiGS`): Flight-in-Gaussian-Splats simulator — ACADOS dynamics, GSplat rendering, MPC trajectory tracking, MinTimeSnap trajectory generation
-- **external/splatnav**: Collision-aware A* + spline path planning over Gaussian splat scenes
-- **external/Splat-MOVER**: Gaussian splat scene editing (used for environment perturbations)
+- **external/FiGS/**: Flight-in-Gaussian-Splats simulator — ACADOS dynamics, GSplat rendering, MPC trajectory tracking, MinTimeSnap trajectory generation
+- **external/splatnav/**: Collision-aware A* + spline path planning over Gaussian splat scenes
+- **external/Splat-MOVER/**: Gaussian splat scene editing (used for environment perturbations)
 
 ## Key Entry Points
 

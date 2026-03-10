@@ -19,7 +19,7 @@ os.environ.setdefault("CXX", "g++-11")
 import sys
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
-sys.path.insert(0, str(_REPO_ROOT / "FiGS" / "src"))
+sys.path.insert(0, str(_REPO_ROOT / "external" / "FiGS" / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "external" / "splatnav"))
 
 from vla_falsification.utilities.coordinate_transform import create_transformer_for_scene

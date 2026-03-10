@@ -16,6 +16,8 @@ from vla_falsification.falsification.perturbations import (
     GateRigidTransformConfig,
 )
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 def _write_colored_cloud(points: np.ndarray, color: np.ndarray, out_path: Path) -> None:
     pcd = o3d.geometry.PointCloud()
@@ -44,27 +46,27 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scene-ply",
-        default="/home/jatucker/Splat-MOVER/scripts/renders/pcd/point_cloud.ply",
+        default=str(_REPO_ROOT / "external" / "Splat-MOVER" / "scripts" / "renders" / "pcd" / "point_cloud.ply"),
         help="Path to full scene point cloud (.ply).",
     )
     parser.add_argument(
         "--gate-mask",
-        default="/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_mask.npy",
+        default=str(_REPO_ROOT / "artifacts" / "left_gate" / "left_gate_bottom_mask.npy"),
         help="Path to left gate mask (.npy boolean array).",
     )
     parser.add_argument(
         "--table-points",
-        default="/home/jatucker/SousVide/artifacts/left_gate/left_table_points.npy",
+        default=str(_REPO_ROOT / "artifacts" / "left_gate" / "left_table_points.npy"),
         help="Path to left table points (.npy N x 3).",
     )
     parser.add_argument(
         "--gate-points",
-        default="/home/jatucker/SousVide/artifacts/left_gate/left_gate_bottom_points.npy",
+        default=str(_REPO_ROOT / "artifacts" / "left_gate" / "left_gate_bottom_points.npy"),
         help="Fallback gate points if scene/mask lengths do not match.",
     )
     parser.add_argument(
         "--out-dir",
-        default="/home/jatucker/SousVide/artifacts/left_gate/perturbation_samples",
+        default=str(_REPO_ROOT / "artifacts" / "left_gate" / "perturbation_samples"),
         help="Directory to save perturbed scene samples.",
     )
     parser.add_argument("--num-samples", type=int, default=3, help="Number of samples.")

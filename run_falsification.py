@@ -41,16 +41,16 @@ os.environ.setdefault("CXX", "g++-11")
 
 _REPO_ROOT = Path(__file__).parent
 
-acados_lib = _REPO_ROOT / "FiGS" / "acados" / "lib"
+acados_lib = _REPO_ROOT / "external" / "FiGS" / "acados" / "lib"
 if acados_lib.exists():
-    os.environ["ACADOS_SOURCE_DIR"] = str(_REPO_ROOT / "FiGS" / "acados")
+    os.environ["ACADOS_SOURCE_DIR"] = str(_REPO_ROOT / "external" / "FiGS" / "acados")
     ld = os.environ.get("LD_LIBRARY_PATH", "")
     os.environ["LD_LIBRARY_PATH"] = f"{acados_lib}:{ld}" if ld else str(acados_lib)
     import ctypes
     for lib_name in ("libblasfeo.so", "libhpipm.so", "libqpOASES_e.so", "libacados.so"):
         ctypes.CDLL(str(acados_lib / lib_name))
 
-figs_src = _REPO_ROOT / "FiGS" / "src"
+figs_src = _REPO_ROOT / "external" / "FiGS" / "src"
 if figs_src.exists():
     sys.path.insert(0, str(figs_src))
 

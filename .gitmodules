@@ -1,5 +1,5 @@
 [submodule "FiGS"]
-	path = FiGS
+	path = external/FiGS
 	url = https://github.com/StanfordMSL/FiGS.git
 [submodule "external/splatnav"]
 	path = external/splatnav

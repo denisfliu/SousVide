@@ -29,13 +29,13 @@ cd docker && docker compose up
 git submodule update --recursive --init
 
 # Build ACADOS
-cd FiGS/acados && mkdir -p build && cd build
+cd external/FiGS/acados && mkdir -p build && cd build
 cmake -DACADOS_WITH_QPOASES=ON .. && make install -j4
-cd ../../..
+cd ../../../..
 
 # Add to ~/.zshrc or ~/.bashrc:
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"$(pwd)/FiGS/acados/lib"
-export ACADOS_SOURCE_DIR="$(pwd)/FiGS/acados"
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:"$(pwd)/external/FiGS/acados/lib"
+export ACADOS_SOURCE_DIR="$(pwd)/external/FiGS/acados"
 export CUDA_HOME=$HOME/.local/cuda-11.8
 
 # Install Python environment
@@ -97,7 +97,6 @@ python scripts/render_falsification_cameras.py --results-dir falsification_resul
 │   ├── recover_falsification_episode.py
 │   ├── render_falsification_cameras.py
 │   ├── debug/                        # Gate perturbation debugging tools
-│   ├── demo/                         # Trajectory generation demos
 │   └── visualization/                # Nerfstudio viewer with trajectories
 ├── configs/
 │   ├── falsification/                # YAML overrides
@@ -107,8 +106,8 @@ python scripts/render_falsification_cameras.py --results-dir falsification_resul
 │   └── colmap/                       # COLMAP reconstructions & trained GSplats
 ├── docker/
 ├── tests/                            # pytest suite (114 tests)
-├── FiGS/                             # Flight-in-Gaussian-Splats simulator (submodule)
 └── external/
+    ├── FiGS/                         # Flight-in-Gaussian-Splats simulator (submodule)
     ├── splatnav/                     # Collision-aware path planning (submodule)
     └── Splat-MOVER/                  # GSplat scene editing (submodule)
 ```
