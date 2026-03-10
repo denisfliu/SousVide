@@ -25,9 +25,9 @@ import numpy as np
 import pandas as pd
 import viser
 
-# Add droneVLA path for coordinate_transform
-sys.path.insert(0, str(Path(__file__).parent))
-from coordinate_transform import create_transformer_for_scene
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+from sousvide.utilities.coordinate_transform import create_transformer_for_scene
 
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig

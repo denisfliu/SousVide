@@ -28,15 +28,15 @@ from sousvide.falsification.perturbations import (
 )
 
 
-REPO_ROOT = Path(__file__).parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATHS = {
     "left_gate": REPO_ROOT
-    / "left_gate_9_24_2025_COLMAP"
+    / "data" / "colmap" / "left_gate"
     / "sagesplat"
     / "2025-10-06_215922"
     / "config.yml",
     "right_gate": REPO_ROOT
-    / "right_gate_9_30_2025_COLMAP"
+    / "data" / "colmap" / "right_gate"
     / "sagesplat"
     / "2025-10-01_103533"
     / "config.yml",

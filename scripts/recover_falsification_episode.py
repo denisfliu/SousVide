@@ -15,8 +15,15 @@ os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
 os.environ.setdefault("CC", "gcc-11")
 os.environ.setdefault("CXX", "g++-11")
 
-from coordinate_transform import create_transformer_for_scene
-from run_falsification import apply_gate_preset, convert_from_ned_to_zup, convert_to_ned, load_config
+# Ensure repo root is on sys.path for standalone execution
+import sys
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+sys.path.insert(0, str(_REPO_ROOT / "FiGS" / "src"))
+sys.path.insert(0, str(_REPO_ROOT / "external" / "splatnav"))
+
+from sousvide.utilities.coordinate_transform import create_transformer_for_scene
+from sousvide.falsification.config import apply_gate_preset, convert_from_ned_to_zup, convert_to_ned, load_config
 from sousvide.falsification.failure_detector import FailureRecord, FailureType, StateSnapshot
 from sousvide.falsification.orchestrator import FalsificationOrchestrator, OrchestratorConfig
 from sousvide.falsification.perturbations import build_perturbation_suite

@@ -1,0 +1,16 @@
+services:
+  sousvide:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ../data:/app/data
+      - ../falsification_results:/app/falsification_results
+    command: ["--gate", "left_gate", "--num-episodes", "10"]

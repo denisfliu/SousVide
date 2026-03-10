@@ -17,7 +17,9 @@ import pandas as pd
 import io
 from PIL import Image
 from tqdm import tqdm
-from coordinate_transform import create_transformer_for_scene
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+from sousvide.utilities.coordinate_transform import create_transformer_for_scene
 import cv2
 
 # Set CUDA device to use GPU 0

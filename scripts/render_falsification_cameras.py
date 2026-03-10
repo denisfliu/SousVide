@@ -16,7 +16,12 @@ os.environ.setdefault("TORCH_COMPILE_DISABLE", "1")
 os.environ.setdefault("CC", "gcc-11")
 os.environ.setdefault("CXX", "g++-11")
 
-from run_falsification import GATE_PRESETS
+import sys
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_REPO_ROOT / "src"))
+sys.path.insert(0, str(_REPO_ROOT / "FiGS" / "src"))
+
+from sousvide.falsification.config import GATE_PRESETS
 from sousvide.falsification.perturbations import build_perturbation_suite
 
 import figs.utilities.config_helper as ch

@@ -30,8 +30,8 @@ import numpy as np
 import viser
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent))
-from coordinate_transform import create_transformer_for_scene
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+from sousvide.utilities.coordinate_transform import create_transformer_for_scene
 
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig
@@ -60,8 +60,8 @@ TRAJECTORY_COLORS = {
 _REPO_ROOT = Path(__file__).parent
 
 CONFIG_PATHS = {
-    'left_gate': _REPO_ROOT / "left_gate_9_24_2025_COLMAP" / "sagesplat" / "2025-10-06_215922" / "config.yml",
-    'right_gate': _REPO_ROOT / "right_gate_9_30_2025_COLMAP" / "sagesplat" / "2025-10-01_103533" / "config.yml",
+    'left_gate': _REPO_ROOT / "data" / "colmap" / "left_gate" / "sagesplat" / "2025-10-06_215922" / "config.yml",
+    'right_gate': _REPO_ROOT / "data" / "colmap" / "right_gate" / "sagesplat" / "2025-10-01_103533" / "config.yml",
 }
 
 

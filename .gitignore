@@ -1,6 +1,6 @@
 # ---- Nerfstudio scene data (large, not source) ----
-left*
-right*
+data/colmap/
+data/alignment/
 !artifacts/
 !artifacts/left_gate/
 !artifacts/left_gate/left_*.npy
