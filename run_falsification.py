@@ -58,31 +58,31 @@ splatnav_src = _REPO_ROOT / "external" / "splatnav"
 if splatnav_src.exists():
     sys.path.insert(0, str(splatnav_src))
 
-sousvide_src = _REPO_ROOT / "src"
-if sousvide_src.exists():
-    sys.path.insert(0, str(sousvide_src))
+proj_src = _REPO_ROOT / "src"
+if proj_src.exists():
+    sys.path.insert(0, str(proj_src))
 
 import figs.utilities.config_helper as ch
 from figs.simulator import Simulator
 
-from sousvide.control.vla_policy import VLAPolicy, VLAPolicyConfig
-from sousvide.falsification.orchestrator import (
+from vla_falsification.control.vla_policy import VLAPolicy, VLAPolicyConfig
+from vla_falsification.falsification.orchestrator import (
     FalsificationOrchestrator,
     OrchestratorConfig,
     run_campaign,
     summarize_campaign,
 )
-from sousvide.falsification.perturbations import build_perturbation_suite
-from sousvide.falsification.splatnav_recovery import RecoveryConfig, SplatNavRecovery
+from vla_falsification.falsification.perturbations import build_perturbation_suite
+from vla_falsification.falsification.splatnav_recovery import RecoveryConfig, SplatNavRecovery
 
-from sousvide.utilities.coordinate_transform import (
+from vla_falsification.utilities.coordinate_transform import (
     build_camera_transforms,
     build_figs_to_nerf_transform,
     convert_ned_to_zup,
     convert_zup_to_ned,
     create_transformer_for_scene,
 )
-from sousvide.falsification.config import (
+from vla_falsification.falsification.config import (
     GATE_PRESETS,
     DEFAULT_CONFIG,
     apply_gate_preset,

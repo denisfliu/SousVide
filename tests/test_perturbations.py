@@ -1,10 +1,10 @@
-"""Tests for the perturbation engine (sousvide.falsification.perturbations)."""
+"""Tests for the perturbation engine (vla_falsification.falsification.perturbations)."""
 
 import numpy as np
 import pytest
 import torch
 
-from sousvide.falsification.perturbations import (
+from vla_falsification.falsification.perturbations import (
     ActionBias,
     ActionBiasConfig,
     ActionNoise,

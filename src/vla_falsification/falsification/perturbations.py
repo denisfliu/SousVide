@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-import cv2
 import numpy as np
 import torch
 from scipy.spatial import cKDTree
@@ -598,6 +597,11 @@ class GateRigidTransform(Perturbation):
         )
         out[self._gate_indices] = transformed_gate_t
         return out
+
+    @property
+    def sampled_transform(self) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Return (translation, rotation_matrix) if sampled, else (None, None)."""
+        return self._translation, self._rotation_np
 
     def apply_quats(self, gsplat_quats: torch.Tensor) -> torch.Tensor:
         """Rotate gate Gaussian orientations by sampled yaw (wxyz convention)."""

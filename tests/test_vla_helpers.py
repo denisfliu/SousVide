@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from sousvide.control.vla_policy import _waypoints_to_tXUd
+from vla_falsification.control.vla_policy import _waypoints_to_tXUd
 
 
 class TestWaypointsToTXUd:

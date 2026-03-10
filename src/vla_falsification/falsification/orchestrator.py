@@ -17,6 +17,7 @@ configs and aggregates results.
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -32,8 +33,10 @@ import figs.dynamics.quadcopter_specifications as qs
 from figs.dynamics.external_forces import ExternalForces
 from figs.simulator import Simulator
 
-from sousvide.control.vla_policy import VLAPolicy, VLAPolicyConfig
-from sousvide.falsification.failure_detector import (
+from vla_falsification.control.vla_policy import VLAPolicy, VLAPolicyConfig
+
+logger = logging.getLogger(__name__)
+from vla_falsification.falsification.failure_detector import (
     FailureDetector,
     FailureRecord,
     FailureType,
@@ -44,8 +47,8 @@ from sousvide.falsification.failure_detector import (
     TiltCriterion,
     ProximityCollisionCriterion,
 )
-from sousvide.falsification.perturbations import PerturbationSuite
-from sousvide.falsification.splatnav_recovery import (
+from vla_falsification.falsification.perturbations import PerturbationSuite
+from vla_falsification.falsification.splatnav_recovery import (
     RecoveryConfig,
     RecoveryResult,
     SplatNavRecovery,
@@ -300,10 +303,9 @@ class FalsificationOrchestrator:
 
         fex = ExternalForces(conFiG["forces"])
 
-        nx, nu = Spec["nx"], Spec["nu"]
+        nx = Spec["nx"]
         m, kt = Spec["m"], Spec["kt"]
         g, Nrtr = Spec["g"], Spec["Nrtr"]
-        rgb_dim = Spec["rgb_dim"]
 
         Tc2b_fwd = cfg.Tc2b_forward if cfg.Tc2b_forward is not None else Spec["Tc2b"]
         Tc2b_dwn = cfg.Tc2b_downward if cfg.Tc2b_downward is not None else Spec["Tc2b"]
@@ -328,8 +330,10 @@ class FalsificationOrchestrator:
         failure_record: Optional[FailureRecord] = None
         tau_cr = np.zeros(3)
 
-        import sys
-        print(f"  VLA loop: {Nsim} sim steps, {Nctl} control steps, hz_sim={hz_sim}, n_sim2ctl={n_sim2ctl}", flush=True)
+        logger.info(
+            "VLA loop: %d sim steps, %d control steps, hz_sim=%s, n_sim2ctl=%d",
+            Nsim, Nctl, hz_sim, n_sim2ctl,
+        )
 
         for i in range(Nsim):
             tcr = cfg.t0 + i / hz_sim
@@ -339,8 +343,6 @@ class FalsificationOrchestrator:
 
             if i % n_sim2ctl == 0:
                 k = i // n_sim2ctl
-                import time as _t
-                print(f"    step {k}/{Nctl} (sim {i}/{Nsim}) t={tcr:.2f} pos={xcr[:3]}", flush=True)
 
                 # --- Observation perturbation on camera poses ---
                 Tc2b_fwd_pert = Tc2b_fwd
@@ -353,12 +355,10 @@ class FalsificationOrchestrator:
                 Tc2w_fwd = Tb2w @ Tc2b_fwd_pert
                 Tc2w_dwn = Tb2w @ Tc2b_dwn_pert
 
-                _t0 = _t.time()
+                t_render_start = time.time()
                 rgb_fwd, dpt_fwd = sim.gsplat.render_rgb(camera_fwd, Tc2w_fwd)
-                _t1 = _t.time()
                 rgb_dwn, dpt_dwn = sim.gsplat.render_rgb(camera_dwn, Tc2w_dwn)
-                _t2 = _t.time()
-                print(f"      render: fwd={_t1-_t0:.2f}s dwn={_t2-_t1:.2f}s", flush=True)
+                t_render_end = time.time()
 
                 # --- Observation perturbation on images ---
                 if len(self.perturbations.observation_image) > 0:
@@ -373,26 +373,24 @@ class FalsificationOrchestrator:
 
                 # Inject downward image before calling control
                 self.vla_policy.set_downward_image(rgb_dwn)
-                _t3 = _t.time()
+                t_ctrl_start = time.time()
                 ucr_raw, tsol = self.vla_policy.control(tcr, xsn, ucr, rgb_fwd, dpt_fwd, fts)
-                _t4 = _t.time()
+                t_ctrl_end = time.time()
 
-                raw_vla = tsol.get("raw_vla_action")
-                next_wp = tsol.get("next_waypoint_ned")
-                q_len = tsol.get("queue_len", "?")
-                n_look = tsol.get("n_lookahead", "?")
-                vel = xcr[3:6]
-                speed = np.linalg.norm(vel)
-                print(f"      VLA delta:  {np.array2string(raw_vla, precision=5, suppress_small=True) if raw_vla is not None else 'N/A'}", flush=True)
-                print(f"      next wp:    {np.array2string(next_wp, precision=4, suppress_small=True) if next_wp is not None else 'N/A'}", flush=True)
-                print(f"      MPC ctrl:   {np.array2string(ucr_raw, precision=4, suppress_small=True)}", flush=True)
-                print(f"      vel={np.array2string(vel, precision=4, suppress_small=True)}  speed={speed:.3f}  queue={q_len}  lookahead={n_look}  ({_t4-_t3:.2f}s)", flush=True)
+                logger.debug(
+                    "step %d/%d  t=%.2f  pos=%s  speed=%.3f  "
+                    "render=%.2fs  ctrl=%.2fs  queue=%s",
+                    k, Nctl, tcr, xcr[:3],
+                    np.linalg.norm(xcr[3:6]),
+                    t_render_end - t_render_start,
+                    t_ctrl_end - t_ctrl_start,
+                    tsol.get("queue_len", "?"),
+                )
 
                 # --- Action perturbation ---
                 ucr = ucr_raw
                 if len(self.perturbations.action) > 0:
                     ucr = self.perturbations.action.apply(ucr)
-                    print(f"      perturbed ctrl: {np.array2string(ucr, precision=4, suppress_small=True)}", flush=True)
 
                 # --- Record snapshot & check safety ---
                 snap = StateSnapshot(
@@ -494,8 +492,9 @@ class FalsificationOrchestrator:
 
         transformed_centers_nerf = base_centers_nerf
         for perturb in self.perturbations.environment_means.perturbations:
-            translation = getattr(perturb, "_translation", None)
-            rotation = getattr(perturb, "_rotation_np", None)
+            if not hasattr(perturb, "sampled_transform"):
+                continue
+            translation, rotation = perturb.sampled_transform
             if translation is None or rotation is None:
                 continue
             transformed_centers_nerf = (
@@ -548,8 +547,9 @@ class FalsificationOrchestrator:
         perturbed_nerf = gate_nerf.copy()
 
         for perturb in self.perturbations.environment_means.perturbations:
-            translation = getattr(perturb, "_translation", None)
-            rotation    = getattr(perturb, "_rotation_np", None)
+            if not hasattr(perturb, "sampled_transform"):
+                continue
+            translation, rotation = perturb.sampled_transform
             if translation is None or rotation is None:
                 continue
             # Rotate around the gate centre, then translate
@@ -680,7 +680,7 @@ def run_campaign(
     -------
     episodes : list of FalsificationEpisode
     """
-    from sousvide.falsification.perturbations import build_perturbation_suite
+    from vla_falsification.falsification.perturbations import build_perturbation_suite
 
     episodes: List[FalsificationEpisode] = []
 

@@ -22,7 +22,7 @@ from nerfstudio.utils import writer
 from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.viewer.viewer import Viewer as ViewerState
 
-from sousvide.falsification.perturbations import (
+from vla_falsification.falsification.perturbations import (
     GateRigidTransform,
     GateRigidTransformConfig,
 )

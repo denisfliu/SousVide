@@ -31,7 +31,7 @@ import viser
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
-from sousvide.utilities.coordinate_transform import create_transformer_for_scene
+from vla_falsification.utilities.coordinate_transform import create_transformer_for_scene
 
 from nerfstudio.configs.base_config import ViewerConfig
 from nerfstudio.engine.trainer import TrainerConfig
@@ -39,7 +39,7 @@ from nerfstudio.pipelines.base_pipeline import Pipeline
 from nerfstudio.utils import writer
 from nerfstudio.utils.eval_utils import eval_setup
 from nerfstudio.viewer.viewer import Viewer as ViewerState
-from sousvide.falsification.perturbations import build_perturbation_suite
+from vla_falsification.falsification.perturbations import build_perturbation_suite
 
 
 # Trajectory colors (0-255 RGB for viser 0.1.x)

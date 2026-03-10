@@ -3,16 +3,16 @@
 import numpy as np
 import pytest
 
-from sousvide.falsification.failure_detector import (
+from vla_falsification.falsification.failure_detector import (
     FailureRecord,
     FailureType,
     StateSnapshot,
 )
-from sousvide.falsification.orchestrator import (
+from vla_falsification.falsification.orchestrator import (
     FalsificationEpisode,
     summarize_campaign,
 )
-from sousvide.falsification.splatnav_recovery import (
+from vla_falsification.falsification.splatnav_recovery import (
     RecoveryConfig,
     RecoveryResult,
     SplatNavRecovery,

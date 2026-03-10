@@ -55,14 +55,20 @@ class VLAPolicyConfig:
 
 
 # ---------------------------------------------------------------------------
-# Host resolution (mirrors policy_inference.py)
+# Host resolution
 # ---------------------------------------------------------------------------
 
-POLICY_HOSTS = {
+#: Host alias registry. Call ``register_policy_host()`` to add entries.
+POLICY_HOSTS: dict[str, str] = {
     "moraband": "moraband.stanford.edu",
     "manaan": "SOE-50TJK74.stanford.edu",
     "coruscant": "coruscant.stanford.edu",
 }
+
+
+def register_policy_host(alias: str, fqdn: str) -> None:
+    """Register a host alias for the VLA policy server."""
+    POLICY_HOSTS[alias] = fqdn
 
 
 def _resolve_host(host: str) -> str:

@@ -3,9 +3,9 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sousvide"
+name = "vla_falsification"
 version = "0.1.0"
-description = "Scene Understanding via Synthesized Visual Inertial Data from Experts"
+description = "Systematic falsification and recovery of VLA control policies in Gaussian Splatting environments"
 authors = [{ name = "JunEn Low", email = "lowjunen@gmail.com.com" }]
 license = { file = "LICENSE" }
 readme = "README.md"
@@ -26,10 +26,8 @@ dependencies = [
     "opencv-python-headless==4.10.0.84",
     "open3d",
     "trimesh",
-    "albumentations",
     "kornia>=0.6.11",
     "pycolmap>=0.6.0",
-    "captum",
 
     # ---- nerfstudio ecosystem ----
     "nerfstudio==1.1.0",
@@ -50,17 +48,11 @@ dependencies = [
     # ---- data / IO ----
     "imageio[ffmpeg]",
     "gdown",
-    "h5py",
     "Pillow",
-    "pyrealsense2",
 
-    # ---- notebook / viz ----
-    "ipykernel",
-    "ipympl",
+    # ---- viz / progress ----
     "matplotlib",
-    "plotly",
     "tqdm",
-    "tabulate",
 
     # ---- build tools ----
     "ninja",
@@ -89,8 +81,14 @@ dependencies = [
     "sagesplat",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 # ---------------------------------------------------------------------------
 # uv configuration

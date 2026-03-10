@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Minimal SousVide trajectory generation with optional corrective waypoints for RIGHT GATE.
-Based on minimal_sousvide_trajectory_right.py with added corrective waypoint insertion.
+Based on minimal_trajectory_right.py with added corrective waypoint insertion.
 
 With 50% probability, adds one of four corrective waypoints:
 - high, left, right, or low
@@ -19,7 +19,7 @@ from PIL import Image
 from tqdm import tqdm
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
-from sousvide.utilities.coordinate_transform import create_transformer_for_scene
+from vla_falsification.utilities.coordinate_transform import create_transformer_for_scene
 import cv2
 
 # Set CUDA device to use GPU 0

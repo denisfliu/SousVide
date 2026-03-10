@@ -1,5 +1,5 @@
 services:
-  sousvide:
+  vla-falsification:
     build:
       context: ..
       dockerfile: docker/Dockerfile

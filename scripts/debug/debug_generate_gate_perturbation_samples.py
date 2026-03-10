@@ -11,7 +11,7 @@ import numpy as np
 import open3d as o3d
 import torch
 
-from sousvide.falsification.perturbations import (
+from vla_falsification.falsification.perturbations import (
     GateRigidTransform,
     GateRigidTransformConfig,
 )

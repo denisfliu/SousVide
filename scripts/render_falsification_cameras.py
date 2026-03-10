@@ -21,8 +21,8 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "FiGS" / "src"))
 
-from sousvide.falsification.config import GATE_PRESETS
-from sousvide.falsification.perturbations import build_perturbation_suite
+from vla_falsification.falsification.config import GATE_PRESETS
+from vla_falsification.falsification.perturbations import build_perturbation_suite
 
 import figs.utilities.config_helper as ch
 import figs.utilities.transform_helper as th

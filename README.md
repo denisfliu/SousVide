@@ -1,17 +1,15 @@
-# SousVide
+# VLA Falsification
 
-**Scene Understanding via Synthesized Visual Inertial Data from Experts**
-
-A research framework for systematic falsification and recovery of Vision-Language-Action (VLA) control policies for drones in photorealistic Gaussian Splatting environments. Built on top of the FiGS flight simulator.
+Systematic falsification and recovery of Vision-Language-Action (VLA) control policies for drones in photorealistic Gaussian Splatting environments. Built on top of the [FiGS](https://github.com/StanfordMSL/FiGS) flight simulator.
 
 ## Quick Start (Docker)
 
 ```bash
 # Build the image (requires NVIDIA GPU + nvidia-container-toolkit)
-docker build -f docker/Dockerfile -t sousvide .
+docker build -f docker/Dockerfile -t vla-falsification .
 
 # Run a falsification campaign
-docker run --gpus all sousvide --gate left_gate --num-episodes 10
+docker run --gpus all vla-falsification --gate left_gate --num-episodes 10
 
 # Or use docker compose
 cd docker && docker compose up
@@ -28,8 +26,6 @@ cd docker && docker compose up
 ### Installation
 
 ```bash
-git clone https://github.com/StanfordMSL/SousVide.git
-cd SousVide
 git submodule update --recursive --init
 
 # Build ACADOS
@@ -84,52 +80,43 @@ python scripts/render_falsification_cameras.py --results-dir falsification_resul
 ## Directory Structure
 
 ```
-SousVide/
 ├── run_falsification.py              # Main entry point
-├── view_falsification_trajectories.py # Primary visualization tool
-├── src/sousvide/
-│   ├── control/                       # Policy architectures & VLA wrapper
-│   ├── falsification/                 # Orchestrator, perturbations, failure detection
-│   │   ├── config.py                  # Gate presets & default configuration
-│   │   ├── orchestrator.py            # Episode runner
-│   │   ├── perturbations.py           # Action/observation/environment perturbations
-│   │   ├── failure_detector.py        # Safety criteria
-│   │   └── splatnav_recovery.py       # Collision-free recovery planning
-│   ├── utilities/
-│   │   └── coordinate_transform.py    # NED/MOCAP/COLMAP/Nerfstudio conversions
-│   ├── synthesize/                    # Training data generation
-│   ├── instruct/                      # Policy training
-│   └── flight/                        # Real-world deployment & evaluation
+├── view_falsification_trajectories.py
+├── src/vla_falsification/
+│   ├── control/
+│   │   └── vla_policy.py             # VLA server wrapper (OpenPI websocket)
+│   ├── falsification/
+│   │   ├── config.py                 # Gate presets & default configuration
+│   │   ├── orchestrator.py           # Episode runner
+│   │   ├── perturbations.py          # Action/observation/environment perturbations
+│   │   ├── failure_detector.py       # Safety criteria
+│   │   └── splatnav_recovery.py      # Collision-free recovery planning
+│   └── utilities/
+│       └── coordinate_transform.py   # NED/MOCAP/COLMAP/Nerfstudio conversions
 ├── scripts/
 │   ├── recover_falsification_episode.py
 │   ├── render_falsification_cameras.py
-│   ├── debug/                         # Gate perturbation debugging tools
-│   ├── demo/                          # Trajectory generation demos
-│   ├── deploy/                        # ROS policy inference node
-│   └── visualization/                 # Nerfstudio viewer with trajectories
+│   ├── debug/                        # Gate perturbation debugging tools
+│   ├── demo/                         # Trajectory generation demos
+│   └── visualization/                # Nerfstudio viewer with trajectories
 ├── configs/
-│   ├── falsification/                 # YAML overrides (config_gate_only.yaml, etc.)
-│   ├── pilots/                        # Named pilot profiles
-│   ├── courses/                       # Trajectory waypoints
-│   ├── frames/                        # Drone specifications
-│   └── methods/                       # Simulation settings
+│   ├── falsification/                # YAML overrides
+│   └── frames/                       # Drone specifications
 ├── data/
-│   ├── alignment/                     # COLMAP-to-MOCAP Sim(3) transforms
-│   └── colmap/                        # COLMAP reconstructions & trained GSplats
+│   ├── alignment/                    # COLMAP-to-MOCAP Sim(3) transforms
+│   └── colmap/                       # COLMAP reconstructions & trained GSplats
 ├── docker/
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── tests/                             # pytest suite (114 tests)
-├── FiGS/                              # Flight-in-Gaussian-Splats simulator (submodule)
+├── tests/                            # pytest suite (114 tests)
+├── FiGS/                             # Flight-in-Gaussian-Splats simulator (submodule)
 └── external/
-    ├── splatnav/                      # Collision-aware path planning (submodule)
-    └── Splat-MOVER/                   # GSplat scene editing (submodule)
+    ├── splatnav/                     # Collision-aware path planning (submodule)
+    └── Splat-MOVER/                  # GSplat scene editing (submodule)
 ```
 
 ## Configuration
 
 Falsification runs are configured via:
-1. Built-in defaults in `src/sousvide/falsification/config.py`
+1. Built-in defaults in `src/vla_falsification/falsification/config.py`
 2. Gate presets (`--gate left_gate` or `--gate right_gate`)
 3. YAML overrides (`--config configs/falsification/config_gate_only.yaml`)
 4. CLI arguments (`--num-episodes`, `--seed`, etc.)
@@ -138,12 +125,4 @@ Falsification runs are configured via:
 
 ```bash
 PYTHONPATH="src:.:$PYTHONPATH" python -m pytest tests/ -v
-```
-
-## Real-World Deployment
-
-Deploy SousVide policies on an [MSL Drone](https://github.com/StanfordMSL/TrajBridge/wiki/3.-Drone-Hardware):
-
-```bash
-python scripts/deploy/policy_inference.py
 ```

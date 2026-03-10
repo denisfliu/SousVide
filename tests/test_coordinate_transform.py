@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sousvide.utilities.coordinate_transform import (
+from vla_falsification.utilities.coordinate_transform import (
     CoordinateTransformer,
     build_camera_transforms,
     build_figs_to_nerf_transform,

@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for SousVide
+# Multi-stage Dockerfile for VLA Falsification
 # Stage 1: build environment (needs nvcc for tinycudann)
 # Stage 2: slim runtime image
 

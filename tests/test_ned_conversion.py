@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from sousvide.utilities.coordinate_transform import convert_ned_to_zup, convert_zup_to_ned
-from sousvide.falsification.config import convert_to_ned, convert_from_ned_to_zup
+from vla_falsification.utilities.coordinate_transform import convert_ned_to_zup, convert_zup_to_ned
+from vla_falsification.falsification.config import convert_to_ned, convert_from_ned_to_zup
 
 
 class TestConvertZupToNed:
@@ -43,7 +43,7 @@ class TestConvertZupToNed:
 
 
 class TestConfigAliases:
-    """Ensure sousvide.falsification.config aliases match the canonical functions."""
+    """Ensure vla_falsification.falsification.config aliases match the canonical functions."""
 
     def test_convert_to_ned_matches(self):
         pos = np.array([1.0, -0.5, 0.8])

@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from sousvide.falsification.failure_detector import FailureRecord, StateSnapshot
+from vla_falsification.falsification.failure_detector import FailureRecord, StateSnapshot
 
 
 @dataclass

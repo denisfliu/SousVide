@@ -12,7 +12,7 @@ from typing import Dict
 
 import yaml
 
-from sousvide.utilities.coordinate_transform import (
+from vla_falsification.utilities.coordinate_transform import (
     convert_ned_to_zup,
     convert_zup_to_ned,
 )
@@ -21,7 +21,7 @@ _REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
 # Legacy aliases — re-exported so callers that used
 # ``from run_falsification import convert_to_ned`` can switch to
-# ``from sousvide.falsification.config import convert_to_ned``.
+# ``from vla_falsification.falsification.config import convert_to_ned``.
 convert_to_ned = convert_zup_to_ned
 convert_from_ned_to_zup = convert_ned_to_zup
 

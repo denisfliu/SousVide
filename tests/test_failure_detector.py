@@ -1,9 +1,9 @@
-"""Tests for the failure detection module (sousvide.falsification.failure_detector)."""
+"""Tests for the failure detection module (vla_falsification.falsification.failure_detector)."""
 
 import numpy as np
 import pytest
 
-from sousvide.falsification.failure_detector import (
+from vla_falsification.falsification.failure_detector import (
     BoundsCriterion,
     FailureDetector,
     FailureRecord,
