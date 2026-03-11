@@ -23,11 +23,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Copy dependency manifests first for layer caching
+# Copy everything needed for uv sync (manifests + source for editable installs)
 COPY pyproject.toml uv.lock* ./
-
-# Copy submodule manifests so editable installs resolve
-COPY external/FiGS/pyproject.toml external/FiGS/setup.py external/FiGS/setup.cfg external/FiGS/README.md external/FiGS/
+COPY src/ src/
+COPY external/FiGS/pyproject.toml external/FiGS/README.md external/FiGS/
 COPY external/FiGS/src/ external/FiGS/src/
 COPY external/FiGS/acados/ external/FiGS/acados/
 COPY external/FiGS/Hierarchical-Localization/ external/FiGS/Hierarchical-Localization/
@@ -35,16 +34,25 @@ COPY external/splatnav/ external/splatnav/
 COPY external/Splat-MOVER/ external/Splat-MOVER/
 
 # Install dependencies (builds tinycudann from source)
+# tinycudann has no-build-isolation: needs torch+setuptools pre-installed.
+# TCNN_CUDA_ARCHITECTURES required because no GPU available during build.
 ENV CC=gcc-11 CXX=g++-11 CUDA_HOME=/usr/local/cuda
-RUN uv sync --no-dev
+ENV TCNN_CUDA_ARCHITECTURES="89"
+RUN uv venv \
+ && uv pip install "setuptools<71" wheel numpy \
+ && uv pip install torch --index-url https://download.pytorch.org/whl/cu121 \
+ && uv sync --no-dev
 
-# Copy source code
-COPY src/ src/
+# Copy remaining project files
 COPY configs/ configs/
 COPY artifacts/ artifacts/
+COPY data/alignment/ data/alignment/
 COPY run_falsification.py .
 COPY view_falsification_trajectories.py .
 COPY scripts/ scripts/
+
+# FiGS config_helper resolves configs relative to external/
+RUN ln -s /app/configs /app/external/configs
 
 # ---------------------------------------------------------------------------
 # Runtime
@@ -63,13 +71,17 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/configs /app/configs
 COPY --from=builder /app/artifacts /app/artifacts
-COPY --from=builder /app/external/FiGS /app/external/FiGS
+COPY --from=builder /app/data/alignment /app/data/alignment
 COPY --from=builder /app/external /app/external
 COPY --from=builder /app/run_falsification.py /app/
 COPY --from=builder /app/view_falsification_trajectories.py /app/
 COPY --from=builder /app/scripts /app/scripts
 
+# FiGS config_helper resolves configs relative to external/
+RUN ln -s /app/configs /app/external/configs
+
 ENV PATH="/app/.venv/bin:$PATH"
+ENV TORCH_COMPILE_DISABLE=1
 ENV PYTHONPATH="/app/src:/app/external/FiGS/src:/app/external/splatnav"
 ENV LD_LIBRARY_PATH="/app/external/FiGS/acados/lib"
 ENV ACADOS_SOURCE_DIR="/app/external/FiGS/acados"

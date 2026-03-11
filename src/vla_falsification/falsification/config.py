@@ -79,7 +79,7 @@ DEFAULT_CONFIG: Dict = {
     },
     "simulation": {
         "t0": 0.0,
-        "tf": 12.0,
+        "tf": 100.0,
         "frame_name": "carl",
         "permutation": 5,
         "goal_position_zup": None,
@@ -104,7 +104,7 @@ DEFAULT_CONFIG: Dict = {
         "max_speed": 5.0,
         "max_tilt_deg": 60.0,
         "safe_horizon": 3,
-        "robot_radius": 0.15,
+        "robot_radius": 0.05,
     },
     "perturbations": {
         "action": [

@@ -53,6 +53,10 @@ from vla_falsification.falsification.splatnav_recovery import (
     RecoveryResult,
     SplatNavRecovery,
 )
+from vla_falsification.utilities.coordinate_transform import (
+    CoordinateTransformer,
+    _get_perm_diag,
+)
 
 
 # ===================================================================
@@ -121,6 +125,7 @@ class OrchestratorConfig:
     # Coordinate transforms
     permutation: int = 5
     coordinate_transform_figs_to_nerf: Optional[np.ndarray] = None
+    coordinate_transformer: Optional[CoordinateTransformer] = None
 
 
 # ===================================================================
@@ -286,11 +291,53 @@ class FalsificationOrchestrator:
     # VLA simulation loop (dual camera, with perturbations)
     # ------------------------------------------------------------------
 
+    def _render_cameras(self, xcr, Tc2b_fwd, Tc2b_dwn, camera_fwd, camera_dwn):
+        """Render forward and downward cameras for the current state."""
+        cfg = self.config
+
+        Tc2b_fwd_pert = Tc2b_fwd
+        Tc2b_dwn_pert = Tc2b_dwn
+        if len(self.perturbations.observation_camera) > 0:
+            Tc2b_fwd_pert = self.perturbations.observation_camera.apply(Tc2b_fwd.copy())
+            Tc2b_dwn_pert = self.perturbations.observation_camera.apply(Tc2b_dwn.copy())
+
+        # NED body-to-world
+        Tb2w_ned = th.x_to_T(xcr)
+        # NED -> MOCAP: flip y, z on position only
+        P = _get_perm_diag(cfg.permutation)
+        Tb2w_mocap = Tb2w_ned.copy()
+        Tb2w_mocap[:3, 3] = P @ Tb2w_ned[:3, 3]
+        # Camera-to-world in MOCAP
+        Tc2w_fwd_mocap = Tb2w_mocap @ Tc2b_fwd_pert
+        Tc2w_dwn_mocap = Tb2w_mocap @ Tc2b_dwn_pert
+        # MOCAP -> COLMAP (render_rgb applies Tw2g: COLMAP -> nerfstudio)
+        if cfg.coordinate_transformer is not None:
+            Tc2w_fwd = cfg.coordinate_transformer.mocap_to_colmap_pose(Tc2w_fwd_mocap)
+            Tc2w_dwn = cfg.coordinate_transformer.mocap_to_colmap_pose(Tc2w_dwn_mocap)
+        else:
+            Tc2w_fwd = Tc2w_fwd_mocap
+            Tc2w_dwn = Tc2w_dwn_mocap
+
+        rgb_fwd, dpt_fwd = self.simulator.gsplat.render_rgb(camera_fwd, Tc2w_fwd)
+        rgb_dwn, dpt_dwn = self.simulator.gsplat.render_rgb(camera_dwn, Tc2w_dwn)
+
+        # Observation perturbation on images
+        if len(self.perturbations.observation_image) > 0:
+            rgb_fwd = self.perturbations.observation_image.apply(rgb_fwd)
+            rgb_dwn = self.perturbations.observation_image.apply(rgb_dwn)
+
+        return rgb_fwd, dpt_fwd, rgb_dwn, dpt_dwn
+
     def _run_vla_loop(
         self, detector: FailureDetector
     ) -> Tuple[List[StateSnapshot], Optional[FailureRecord]]:
         """Run the VLA in FiGS with dual cameras, perturbations, and live
-        failure detection.  Returns the trajectory and (if failed) the record."""
+        failure detection.
+
+        Loop structure: query VLA for a chunk of actions, execute all actions
+        in the chunk (each one is a control step with n_sim2ctl physics
+        substeps), then render new images and query again.
+        """
         cfg = self.config
         sim = self.simulator
 
@@ -298,7 +345,6 @@ class FalsificationOrchestrator:
         Rout = conFiG["rollout"]
         Spec = qs.generate_specifications(conFiG["frame"])
 
-        # Pass frame spec to VLA policy so it can build its MPC
         self.vla_policy._frame_spec = Spec
 
         fex = ExternalForces(conFiG["forces"])
@@ -315,9 +361,9 @@ class FalsificationOrchestrator:
 
         hz_sim = Rout["frequency"]
         n_sim2ctl = int(hz_sim / self.vla_policy.hz)
-        dt = np.round(cfg.tf - cfg.t0, 5)
-        Nsim = int(dt * hz_sim)
-        Nctl = int(dt * self.vla_policy.hz)
+        dt_total = np.round(cfg.tf - cfg.t0, 5)
+        Nctl = int(dt_total * self.vla_policy.hz)
+        chunk_size = self.vla_policy.config.actions_per_chunk
 
         mu_md, std_md = np.zeros(nx), np.zeros(nx)
         mu_sn, std_sn = np.zeros(nx), np.zeros(nx)
@@ -330,76 +376,69 @@ class FalsificationOrchestrator:
         failure_record: Optional[FailureRecord] = None
         tau_cr = np.zeros(3)
 
+        # Build MPC once before the loop
+        self.vla_policy.build_mpc(xcr, frame_spec=Spec)
+
+        n_queries = 0
+        k = 0  # control step counter
+
         logger.info(
-            "VLA loop: %d sim steps, %d control steps, hz_sim=%s, n_sim2ctl=%d",
-            Nsim, Nctl, hz_sim, n_sim2ctl,
+            "VLA loop: %d control steps, chunk_size=%d, hz_sim=%s, n_sim2ctl=%d",
+            Nctl, chunk_size, hz_sim, n_sim2ctl,
         )
 
-        for i in range(Nsim):
-            tcr = cfg.t0 + i / hz_sim
-            fcr = fex.get_forces(xcr[0:6], noisy=True)
-            pcr = np.hstack((m, kt, fcr))
-            fts = np.hstack((fcr, tau_cr))
+        while k < Nctl:
+            # --- Render cameras at current state ---
+            t_render_start = time.time()
+            rgb_fwd, dpt_fwd, rgb_dwn, dpt_dwn = self._render_cameras(
+                xcr, Tc2b_fwd, Tc2b_dwn, camera_fwd, camera_dwn,
+            )
+            t_render_end = time.time()
 
-            if i % n_sim2ctl == 0:
-                k = i // n_sim2ctl
+            # --- Observation perturbation on state ---
+            xsn = xcr + np.random.normal(loc=mu_sn, scale=std_sn)
+            xsn[6:10] = oh.obedient_quaternion(xsn[6:10], xpr[6:10])
+            if len(self.perturbations.observation_state) > 0:
+                xsn = self.perturbations.observation_state.apply(xsn)
 
-                # --- Observation perturbation on camera poses ---
-                Tc2b_fwd_pert = Tc2b_fwd
-                Tc2b_dwn_pert = Tc2b_dwn
-                if len(self.perturbations.observation_camera) > 0:
-                    Tc2b_fwd_pert = self.perturbations.observation_camera.apply(Tc2b_fwd.copy())
-                    Tc2b_dwn_pert = self.perturbations.observation_camera.apply(Tc2b_dwn.copy())
+            # --- Query VLA for a full chunk of actions ---
+            actions = self.vla_policy.query_actions(rgb_fwd, rgb_dwn, xsn)
+            n_queries += 1
+            n_actions = min(len(actions), Nctl - k)
 
-                Tb2w = th.x_to_T(xcr)
-                Tc2w_fwd = Tb2w @ Tc2b_fwd_pert
-                Tc2w_dwn = Tb2w @ Tc2b_dwn_pert
+            logger.info(
+                "VLA query %d: got %d actions, executing %d (k=%d/%d), "
+                "render=%.2fs, pos=%s",
+                n_queries, len(actions), n_actions, k, Nctl,
+                t_render_end - t_render_start, xcr[:3],
+            )
 
-                t_render_start = time.time()
-                rgb_fwd, dpt_fwd = sim.gsplat.render_rgb(camera_fwd, Tc2w_fwd)
-                rgb_dwn, dpt_dwn = sim.gsplat.render_rgb(camera_dwn, Tc2w_dwn)
-                t_render_end = time.time()
+            # --- Execute each action in the chunk ---
+            for ai in range(n_actions):
+                tcr = cfg.t0 + k / self.vla_policy.hz
 
-                # --- Observation perturbation on images ---
-                if len(self.perturbations.observation_image) > 0:
-                    rgb_fwd = self.perturbations.observation_image.apply(rgb_fwd)
-                    rgb_dwn = self.perturbations.observation_image.apply(rgb_dwn)
+                # MPC step: use this action + remaining as lookahead
+                fcr = fex.get_forces(xcr[0:6], noisy=True)
+                fts = np.hstack((fcr, tau_cr))
 
-                # --- Observation perturbation on state ---
-                xsn = xcr + np.random.normal(loc=mu_sn, scale=std_sn)
-                xsn[6:10] = oh.obedient_quaternion(xsn[6:10], xpr[6:10])
-                if len(self.perturbations.observation_state) > 0:
-                    xsn = self.perturbations.observation_state.apply(xsn)
-
-                # Inject downward image before calling control
-                self.vla_policy.set_downward_image(rgb_dwn)
-                t_ctrl_start = time.time()
-                ucr_raw, tsol = self.vla_policy.control(tcr, xsn, ucr, rgb_fwd, dpt_fwd, fts)
-                t_ctrl_end = time.time()
-
-                logger.debug(
-                    "step %d/%d  t=%.2f  pos=%s  speed=%.3f  "
-                    "render=%.2fs  ctrl=%.2fs  queue=%s",
-                    k, Nctl, tcr, xcr[:3],
-                    np.linalg.norm(xcr[3:6]),
-                    t_render_end - t_render_start,
-                    t_ctrl_end - t_ctrl_start,
-                    tsol.get("queue_len", "?"),
+                ucr_raw, tsol = self.vla_policy.step_action(
+                    xcr=xcr, upr=ucr, action_index=ai, actions=actions,
+                    rgb=rgb_fwd, dpt=dpt_fwd, fcr=fts,
                 )
 
-                # --- Action perturbation ---
+                # Action perturbation
                 ucr = ucr_raw
                 if len(self.perturbations.action) > 0:
                     ucr = self.perturbations.action.apply(ucr)
 
-                # --- Record snapshot & check safety ---
+                # Record snapshot & check safety
                 snap = StateSnapshot(
                     time=tcr,
                     state=xcr.copy(),
                     control=ucr.copy(),
-                    rgb_forward=rgb_fwd,
-                    rgb_downward=rgb_dwn,
-                    depth=dpt_fwd,
+                    rgb_forward=rgb_fwd if ai == 0 else None,
+                    rgb_downward=rgb_dwn if ai == 0 else None,
+                    depth=dpt_fwd if ai == 0 else None,
                     step_index=k,
                 )
                 trajectory.append(snap)
@@ -409,10 +448,23 @@ class FalsificationOrchestrator:
                     failure_record = record
                     break
 
-            xpr = xcr
-            xcr = sim.solver.simulate(x=xcr, u=ucr, p=pcr)
-            xcr = xcr + np.random.normal(loc=mu_md, scale=std_md)
-            xcr[6:10] = oh.obedient_quaternion(xcr[6:10], xpr[6:10])
+                # Simulate n_sim2ctl physics substeps
+                pcr = np.hstack((m, kt, fex.get_forces(xcr[0:6], noisy=True)))
+                for _ in range(n_sim2ctl):
+                    xpr = xcr
+                    xcr = sim.solver.simulate(x=xcr, u=ucr, p=pcr)
+                    xcr = xcr + np.random.normal(loc=mu_md, scale=std_md)
+                    xcr[6:10] = oh.obedient_quaternion(xcr[6:10], xpr[6:10])
+
+                k += 1
+
+            if failure_record is not None:
+                break
+
+        logger.info(
+            "VLA loop done: %d control steps, %d VLA queries, %d snapshots",
+            k, n_queries, len(trajectory),
+        )
 
         return trajectory, failure_record
 

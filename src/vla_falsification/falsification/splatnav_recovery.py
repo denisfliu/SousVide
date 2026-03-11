@@ -16,12 +16,15 @@ that can be used for:
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
+
+logger = logging.getLogger(__name__)
 
 from vla_falsification.falsification.failure_detector import FailureRecord, StateSnapshot
 
@@ -40,7 +43,7 @@ class RecoveryConfig:
     # Voxel bounds in NS-internal frame.  ±0.5 NS covers ≈ ±2.9 m MOCAP.
     env_lower_bound: List[float] = field(default_factory=lambda: [-0.5, -0.5, -0.5])
     env_upper_bound: List[float] = field(default_factory=lambda: [0.5, 0.5, 0.5])
-    voxel_resolution: int = 150
+    voxel_resolution: int = 100
     gate_position: Optional[List[float]] = None
     gate_pass_radius_m: float = 0.25
     goal_tolerance_m: float = 0.20
@@ -342,6 +345,22 @@ class SplatNavRecovery:
         start  = np.asarray(start_position_figs,  dtype=float)
         gate   = np.asarray(gate_position_figs,   dtype=float)
         goal   = np.asarray(goal_position_figs,   dtype=float)
+
+        # Coordinate sanity check: round-trip gate through transforms
+        gate_nerf = self._figs_pos_to_nerf(gate)
+        gate_rt = self._nerf_pos_to_figs(gate_nerf)
+        rt_error = np.linalg.norm(gate - gate_rt)
+        if rt_error > 1e-4:
+            logger.warning(
+                "Coordinate round-trip error %.6f for gate %s", rt_error, gate.tolist()
+            )
+        lb = np.array(self.config.env_lower_bound)
+        ub = np.array(self.config.env_upper_bound)
+        if np.any(gate_nerf < lb) or np.any(gate_nerf > ub):
+            logger.warning(
+                "Gate in NS frame %s outside voxel bounds [%s, %s]",
+                gate_nerf.tolist(), lb.tolist(), ub.tolist(),
+            )
         offset = float(self.config.gate_approach_offset_m)
 
         # ---- Approach and lateral directions --------------------------------
@@ -393,6 +412,9 @@ class SplatNavRecovery:
                 waypoints = [start, before_gate, gate, after_gate, goal]
                 pos = self._min_snap_positions(waypoints, total_time=5.0, hz=10)
             except Exception as e:
+                logger.debug(
+                    "Min-snap attempt %d failed: %s: %s", attempt, type(e).__name__, e
+                )
                 continue
 
             if self._trajectory_collision_free(pos):
@@ -400,13 +422,31 @@ class SplatNavRecovery:
                 accepted_lat   = lat_off
                 accepted_vert  = vert_off
                 break
+            else:
+                logger.debug(
+                    "Attempt %d: min-snap succeeded but trajectory collides "
+                    "(lat=%.3f, vert=%.3f)",
+                    attempt, lat_off, vert_off,
+                )
 
         t1 = _time.time()
+
+        if best_positions is None:
+            logger.warning(
+                "plan_via_gate: all %d attempts failed. "
+                "start=%s, gate=%s (NS=%s), goal=%s",
+                max_attempts,
+                start.tolist(), gate.tolist(), gate_nerf.tolist(), goal.tolist(),
+            )
         feasible = best_positions is not None
 
+        # Temporarily override gate_position with the perturbed gate for validation
+        saved_gate_position = self.config.gate_position
+        self.config.gate_position = gate.tolist()
         validation_ok, validation_meta = self._validate_trajectory_positions(
             best_positions, goal
         )
+        self.config.gate_position = saved_gate_position
         feasible = bool(feasible and validation_ok)
         validation_meta["attempts"]        = attempt + 1 if best_positions is not None else max_attempts
         validation_meta["accepted_lat_m"]  = float(accepted_lat)

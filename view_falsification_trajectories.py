@@ -259,7 +259,7 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             tension=0.5,
         )
 
-    def _add_marker(name, position, color, radius=0.02):
+    def _add_marker(name, position, color, radius=0.005):
         server.add_icosphere(
             name=name,
             radius=radius,
@@ -268,13 +268,25 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
         )
 
     def to_viewer(positions_mocap):
+        """Convert MOCAP positions to nerfstudio viewer frame.
+
+        Chain: MOCAP -> COLMAP (Sim(3) inverse) -> axis flip -> dataparser -> nerfstudio.
+        GSplat Tw2g = Tdp_scaled @ axis_flip, so we must apply axis_flip first.
+        """
+        axis_flip = np.diag([1.0, -1.0, -1.0])
         out = []
         for p in positions_mocap:
             if transformer:
                 p_colmap = transformer.mocap_to_colmap_position(p)
             else:
                 p_colmap = p
-            out.append(p_colmap)
+            # COLMAP -> nerfstudio: axis flip then dataparser transform
+            p_flipped = axis_flip @ p_colmap
+            if dataparser_transform is not None:
+                p_ns = dataparser_scale * (dataparser_transform[:, :3] @ p_flipped + dataparser_transform[:, 3])
+            else:
+                p_ns = p_flipped
+            out.append(p_ns)
         return np.array(out)
 
     if reference_safe_path_mocap is not None and len(reference_safe_path_mocap) > 1:
@@ -289,7 +301,7 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             "/falsification/reference_safe_gate",
             ref_v[1],
             TRAJECTORY_COLORS["reference_safe"],
-            0.03,
+            0.005,
         )
         print("  Reference safe path:", flush=True)
         print(
@@ -342,10 +354,19 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             [x - hl, y + hw, z_bot],
         ])
 
-        if transformer:
-            corners_v = np.array([transformer.mocap_to_colmap_position(c) for c in corners_mocap])
+        axis_flip = np.diag([1.0, -1.0, -1.0])
+        corners_colmap = np.array([
+            transformer.mocap_to_colmap_position(c) if transformer else c
+            for c in corners_mocap
+        ])
+        corners_flipped = np.array([axis_flip @ c for c in corners_colmap])
+        if dataparser_transform is not None:
+            corners_v = np.array([
+                dataparser_scale * (dataparser_transform[:, :3] @ c + dataparser_transform[:, 3])
+                for c in corners_flipped
+            ])
         else:
-            corners_v = corners_mocap
+            corners_v = corners_flipped
 
         server.add_mesh_simple(
             name=name,
@@ -379,7 +400,7 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
                                 TRAJECTORY_COLORS['failure'], 5.0)
                     _add_marker(f"{prefix}/last_safe",
                                 fpos_v[safe_end - 1],
-                                TRAJECTORY_COLORS['failure_safe'], 0.025)
+                                TRAJECTORY_COLORS['failure_safe'], 0.004)
                 else:
                     # If a failed trajectory claims the final point is still safe,
                     # don't render the whole thing as blue; that metadata is
@@ -391,9 +412,9 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
                 _add_spline(f"{prefix}/trajectory",
                             fpos_v, TRAJECTORY_COLORS[color_key], 5.0)
 
-            _add_marker(f"{prefix}/start", fpos_v[0], (0, 255, 0))
+            _add_marker(f"{prefix}/start", fpos_v[0], (0, 255, 0), radius=0.003)
             end_color = (255, 0, 0) if not traj["success"] else (50, 130, 230)
-            _add_marker(f"{prefix}/end", fpos_v[-1], end_color)
+            _add_marker(f"{prefix}/end", fpos_v[-1], end_color, radius=0.003)
 
             # Print start/end positions for debugging
             start_mocap = fpos[0]
@@ -589,6 +610,11 @@ Examples:
 
     print(f"Loaded {len(trajectories)} episodes for scene '{scene_key}'")
 
+    # Auto-apply perturbation when viewing a single episode
+    perturb_episode_id = args.apply_episode_perturbation
+    if perturb_episode_id is None and len(trajectories) == 1:
+        perturb_episode_id = trajectories[0]["episode_id"]
+
     if args.apply_episode_perturbation is not None:
         if args.episode and args.apply_episode_perturbation not in set(args.episode):
             print("--apply-episode-perturbation must refer to one of the selected --episode IDs.")
@@ -612,7 +638,7 @@ Examples:
         websocket_port=args.port,
         bbox_interval=args.bbox_interval,
         results_dir=args.results_dir,
-        perturb_episode_id=args.apply_episode_perturbation,
+        perturb_episode_id=perturb_episode_id,
         show_reference_safe=args.show_reference_safe,
     )
 

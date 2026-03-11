@@ -7,20 +7,20 @@ and converts them into waypoints tracked by VehicleRateMPC.
 
 Architecture
 ------------
-1. VLA server returns position deltas [dx, dy, dz, dyaw, ...] per step.
-2. We accumulate deltas from the current position to produce a sequence of
-   target waypoints.
-3. The MPC is built once from an initial hover course; on each step we
-   update its ``tXUd`` (desired trajectory) from the VLA waypoints so the
-   ACADOS solver is only set up once (expensive) and then reused (fast).
+1. The orchestrator renders cameras and calls ``query_actions()`` to get a
+   full chunk of position deltas from the VLA server.
+2. For each action in the chunk, the orchestrator calls ``step_action()``
+   which accumulates the remaining deltas into waypoints and runs MPC to
+   produce [thrust, wx, wy, wz].
+3. After all actions in the chunk are consumed, the orchestrator renders
+   new images and queries the server again.
 """
 
 from __future__ import annotations
 
 import time
-from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -52,6 +52,10 @@ class VLAPolicyConfig:
 
     # MPC tracking
     frame: str = "carl"
+
+    # Coordinate conversion: VLA trained in MOCAP (Z-up), sim runs in NED.
+    # Permutation ID for NED <-> MOCAP sign flips (default 5 = diag([1,-1,-1])).
+    permutation: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +149,10 @@ class VLAPolicy(BaseController):
     """
     FiGS-compatible controller backed by an OpenPI VLA server.
 
-    The VLA produces position deltas which are accumulated into waypoints.
-    A VehicleRateMPC tracks those waypoints, producing the actual
-    [thrust, wx, wy, wz] for the FiGS dynamics.
-
-    The MPC is built once (expensive ACADOS setup ~7s) then its desired
-    trajectory ``tXUd`` is updated each step (fast).
+    The orchestrator drives the control loop:
+    1. Render cameras, call ``query_actions()`` → get a full action chunk.
+    2. For each action in the chunk, call ``step_action()`` → MPC control.
+    3. After the chunk is consumed, render again and repeat.
     """
 
     def __init__(self, config: VLAPolicyConfig | None = None):
@@ -160,9 +162,6 @@ class VLAPolicy(BaseController):
 
         self.name = "VLAPolicy"
         self.hz = self.config.hz
-
-        # Action queue (filled in chunks by the server)
-        self._action_queue: deque[np.ndarray] = deque()
 
         # Dual-camera state
         self._rgb_downward: np.ndarray | None = None
@@ -189,6 +188,15 @@ class VLAPolicy(BaseController):
     # Connection
     # ------------------------------------------------------------------
 
+    def close(self) -> None:
+        """Close the websocket connection to the VLA server."""
+        if self._client is not None and hasattr(self._client, '_ws'):
+            try:
+                self._client._ws.close()
+            except Exception:
+                pass
+        self._connected = False
+
     def _ensure_connected(self) -> None:
         if self._connected:
             return
@@ -207,7 +215,7 @@ class VLAPolicy(BaseController):
     # MPC builder (called once)
     # ------------------------------------------------------------------
 
-    def _build_mpc_once(self, x0: np.ndarray, frame_spec: dict = None) -> None:
+    def build_mpc(self, x0: np.ndarray, frame_spec: dict = None) -> None:
         """Build the VehicleRateMPC once from a hover course at x0.
 
         Parameters
@@ -216,6 +224,9 @@ class VLAPolicy(BaseController):
             Pre-resolved frame specification dict (from ``qs.generate_specifications``).
             If None, resolves from ``self.config.frame`` via config_helper.
         """
+        if self._mpc_built:
+            return
+
         from figs.control.vehicle_rate_mpc import VehicleRateMPC
 
         if frame_spec is not None:
@@ -292,21 +303,31 @@ class VLAPolicy(BaseController):
     # Observation building
     # ------------------------------------------------------------------
 
-    def _build_obs(
+    def build_obs(
         self,
         rgb_forward: np.ndarray,
         rgb_downward: np.ndarray,
         state: np.ndarray,
     ) -> dict:
-        """Build the observation dict expected by the OpenPI server."""
+        """Build the observation dict expected by the OpenPI server.
+
+        The VLA was trained in MOCAP (Z-up) frame, so we convert the NED
+        state position to MOCAP before sending.
+        """
+        from vla_falsification.utilities.coordinate_transform import _get_perm_diag
+
         sz = self.config.image_size
 
         front = _resize(rgb_forward, sz)
         down = _resize(rgb_downward, sz)
         third = np.zeros((sz, sz, 3), dtype=np.uint8)
 
+        # Convert NED position to MOCAP for the VLA
+        P = _get_perm_diag(self.config.permutation)
+        pos_mocap = P @ state[:3]
+
         state_vec = np.zeros(7, dtype=np.float32)
-        state_vec[:3] = state[:3]
+        state_vec[:3] = pos_mocap
         if len(state) >= 10:
             qx, qy, qz, qw = state[6:10]
             yaw = np.arctan2(2.0 * (qw * qz + qx * qy),
@@ -327,86 +348,88 @@ class VLAPolicy(BaseController):
     # Server inference
     # ------------------------------------------------------------------
 
-    def _query_server(self, obs: dict) -> None:
-        """Send obs to the server, receive an action chunk, fill the queue."""
+    def query_actions(
+        self,
+        rgb_forward: np.ndarray,
+        rgb_downward: np.ndarray,
+        state: np.ndarray,
+    ) -> List[np.ndarray]:
+        """Query the VLA server and return the full action chunk.
+
+        Returns
+        -------
+        actions : list of np.ndarray
+            Each element is one action (position delta) from the chunk.
+        """
         self._ensure_connected()
 
-        import time as _time
+        obs = self.build_obs(rgb_forward, rgb_downward, state)
+
         print(f"      [VLA] querying server...", end="", flush=True)
-        t0 = _time.time()
+        t0 = time.time()
         result = self._client.infer(obs)
-        t1 = _time.time()
-        print(f" done ({t1-t0:.2f}s), keys={list(result.keys())}", flush=True)
-        actions = result["actions"]
+        t1 = time.time()
+        print(f" done ({t1-t0:.2f}s)", flush=True)
+        raw = result["actions"]
 
-        if isinstance(actions, np.ndarray) and actions.ndim == 2:
-            for a in actions:
-                self._action_queue.append(a)
-        elif isinstance(actions, (list, tuple)):
-            for a in actions:
-                self._action_queue.append(np.asarray(a))
+        if isinstance(raw, np.ndarray) and raw.ndim == 2:
+            actions = [raw[i] for i in range(raw.shape[0])]
+        elif isinstance(raw, (list, tuple)):
+            actions = [np.asarray(a) for a in raw]
         else:
-            self._action_queue.append(np.asarray(actions))
+            actions = [np.asarray(raw)]
+
+        return actions
 
     # ------------------------------------------------------------------
-    # Dual-camera injection
+    # Single-action MPC step
     # ------------------------------------------------------------------
 
-    def set_downward_image(self, rgb_downward: np.ndarray) -> None:
-        """Inject the downward camera image before ``control()`` is called."""
-        self._rgb_downward = rgb_downward
-
-    # ------------------------------------------------------------------
-    # BaseController interface
-    # ------------------------------------------------------------------
-
-    def control(
+    def step_action(
         self,
-        tcr: float,
         xcr: np.ndarray,
         upr: np.ndarray,
-        rgb: np.ndarray,
-        dpt: np.ndarray,
-        fcr: np.ndarray,
+        action_index: int,
+        actions: List[np.ndarray],
+        rgb: np.ndarray = None,
+        dpt: np.ndarray = None,
+        fcr: np.ndarray = None,
     ) -> Tuple[np.ndarray, dict]:
-        t0 = time.time()
+        """Execute one action from the chunk via MPC tracking.
 
-        dt = tcr - self._last_time if self._last_time > 0 else 1.0 / self.hz
-        self._last_time = tcr
-
-        rgb_forward = rgb
-        rgb_downward = (
-            self._rgb_downward
-            if self._rgb_downward is not None
-            else np.zeros_like(rgb)
-        )
-
-        # Build MPC once (expensive ~7s, but only once)
+        Parameters
+        ----------
+        xcr : current state (10-d NED)
+        upr : previous control
+        action_index : index of the current action in ``actions``
+        actions : the full action chunk from ``query_actions()``
+        rgb, dpt, fcr : passed through to MPC (unused by MPC but required by interface)
+        """
         if not self._mpc_built:
-            self._build_mpc_once(xcr, frame_spec=self._frame_spec)
+            self.build_mpc(xcr, frame_spec=self._frame_spec)
 
-        # If the action queue is empty, query the server for a new chunk
-        if len(self._action_queue) == 0:
-            obs = self._build_obs(rgb_forward, rgb_downward, xcr)
-            self._query_server(obs)
+        from vla_falsification.utilities.coordinate_transform import _get_perm_diag
 
-        # Pop the next raw VLA action (position delta)
-        vla_action = self._action_queue.popleft()
-
-        # Accumulate position deltas into waypoints from current position
+        vla_action = actions[action_index]
         current_pos = xcr[:3].copy()
-        lookahead = min(len(self._action_queue), 20)
+
+        # VLA actions are position deltas in MOCAP frame; convert to NED.
+        # P is its own inverse: P @ P = I
+        P = _get_perm_diag(self.config.permutation)
+
+        # Build waypoints: current action + remaining actions as lookahead
+        remaining = actions[action_index:]
+        lookahead = min(len(remaining), 21)  # current + up to 20 ahead
 
         waypoints = []
-        wp = current_pos + vla_action[:3]
-        waypoints.append(wp.copy())
+        wp = current_pos.copy()
         for j in range(lookahead):
-            wp = wp + self._action_queue[j][:3]
+            delta_ned = P @ remaining[j][:3]
+            wp = wp + delta_ned
             waypoints.append(wp.copy())
 
         waypoints_arr = np.array(waypoints)
 
-        # Update the MPC's desired trajectory (fast — no ACADOS rebuild)
         new_tXUd = _waypoints_to_tXUd(
             current_state=xcr,
             waypoints_ned=waypoints_arr,
@@ -418,21 +441,38 @@ class VLAPolicy(BaseController):
         )
         self._mpc.tXUd = new_tXUd
 
-        # Use MPC to compute the actual control (just solves the OCP, fast)
-        ucr, tsol_mpc = self._mpc.control(0.0, xcr, upr, rgb, dpt, fcr)
+        _rgb = rgb if rgb is not None else np.zeros((1, 1, 3), dtype=np.uint8)
+        _dpt = dpt if dpt is not None else np.zeros((1, 1), dtype=np.float32)
+        _fcr = fcr if fcr is not None else np.zeros(6)
 
-        t1 = time.time()
+        ucr, tsol_mpc = self._mpc.control(0.0, xcr, upr, _rgb, _dpt, _fcr)
+
         tsol = {
-            "vla_inference": t1 - t0,
             "raw_vla_action": vla_action.copy(),
             "next_waypoint_ned": waypoints[0].copy(),
             "n_lookahead": len(waypoints),
-            "queue_len": len(self._action_queue),
-            "mpc_setup": tsol_mpc.get("setup_ocp", 0),
-            "mpc_solve": tsol_mpc.get("solve_ocp", 0),
+            "action_index": action_index,
+            "chunk_size": len(actions),
         }
-
         return ucr, tsol
+
+    # ------------------------------------------------------------------
+    # Legacy BaseController interface (kept for compatibility)
+    # ------------------------------------------------------------------
+
+    def control(
+        self,
+        tcr: float,
+        xcr: np.ndarray,
+        upr: np.ndarray,
+        rgb: np.ndarray,
+        dpt: np.ndarray,
+        fcr: np.ndarray,
+    ) -> Tuple[np.ndarray, dict]:
+        raise NotImplementedError(
+            "VLAPolicy.control() is no longer used. "
+            "Use query_actions() + step_action() from the orchestrator loop."
+        )
 
     def reset_memory(
         self,
@@ -441,10 +481,8 @@ class VLAPolicy(BaseController):
         fts0=None,
         pch0=None,
     ) -> None:
-        self._action_queue.clear()
         self._rgb_downward = None
         self._last_time = 0.0
-        # Don't reset the MPC — keep the ACADOS solver alive
         if self._client is not None:
             try:
                 self._client.reset()

@@ -155,6 +155,7 @@ def main():
     scene_key = cfg["scene"]["scene_key"]
     config_yml_path = Path(cfg["scene"]["config_yml"])
     t_figs_to_nerf = build_figs_to_nerf_transform(scene_key, perm, config_yml_path)
+    coord_transformer = create_transformer_for_scene(scene_key)
 
     # ---- Coordinate conversion ----
     start_ned = convert_to_ned(cfg["simulation"]["start_position_zup"], perm)
@@ -192,6 +193,7 @@ def main():
         image_size=vla_cfg.get("image_size", 256),
         mask_third_person=vla_cfg.get("mask_third_person", True),
         frame=cfg["simulation"]["frame_name"],
+        permutation=perm,
     )
     vla_policy = VLAPolicy(vla_config)
 
@@ -250,6 +252,7 @@ def main():
         recovery_total_time=cfg["recovery"]["recovery_total_time"],
         permutation=perm,
         coordinate_transform_figs_to_nerf=t_figs_to_nerf,
+        coordinate_transformer=coord_transformer,
     )
 
     orchestrator = FalsificationOrchestrator(
@@ -409,6 +412,9 @@ def main():
     print(f"\nResults saved to: {output_dir.resolve()}")
     print(f"Visualize with:  python view_falsification_trajectories.py "
           f"--results-dir {output_dir}")
+
+    # Clean up resources to prevent hang on exit
+    vla_policy.close()
 
 
 if __name__ == "__main__":
