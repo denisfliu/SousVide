@@ -757,7 +757,7 @@ def build_perturbation_suite(config: Dict) -> PerturbationSuite:
     for surface_name in ["action", "observation_image", "observation_state",
                          "observation_camera", "environment_means",
                          "environment_scales", "environment_opacities"]:
-        entries = config.get(surface_name, [])
+        entries = config.get(surface_name) or []
         stack = getattr(suite, surface_name)
         for entry in entries:
             entry = dict(entry)

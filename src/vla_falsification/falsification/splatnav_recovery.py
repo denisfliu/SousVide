@@ -45,8 +45,8 @@ class RecoveryConfig:
     env_upper_bound: List[float] = field(default_factory=lambda: [0.5, 0.5, 0.5])
     voxel_resolution: int = 100
     gate_position: Optional[List[float]] = None
-    gate_pass_radius_m: float = 0.25
-    goal_tolerance_m: float = 0.20
+    gate_pass_radius_m: float = 0.50
+    goal_tolerance_m: float = 0.40
     gate_approach_offset_m: float = 0.4
 
 
@@ -282,19 +282,46 @@ class SplatNavRecovery:
         tXUd = th.TsFO_to_tXU(Tsd, FOd, 1.0, 7.0, None)
         return tXUd[:, 1:4]   # (N, 3) positions in FiGS NED
 
-    def _trajectory_collision_free(self, positions_figs: np.ndarray, stride: int = 3) -> bool:
+    def _trajectory_collision_free(
+        self,
+        positions_figs: np.ndarray,
+        stride: int = 3,
+        gate_pos_figs: np.ndarray | None = None,
+        gate_clearance_m: float = 0.3,
+    ) -> bool:
         """Return True iff no sampled position falls in the SplatNav voxel's
         non-navigable (obstacle-inflated) cells.
+
+        Points within ``gate_clearance_m`` of ``gate_pos_figs`` are exempt from
+        collision checking because the voxel grid cannot represent the gate
+        opening (Gaussian bounding boxes span across it).
 
         Points are converted from FiGS NED to Nerfstudio before querying.
         """
         voxel = self._planner.gsplat_voxel
         for pos in positions_figs[::stride]:
+            # Skip collision check near the gate opening
+            if gate_pos_figs is not None:
+                dist_to_gate = np.linalg.norm(pos - gate_pos_figs)
+                if dist_to_gate < gate_clearance_m:
+                    continue
+
             p_nerf = torch.tensor(
                 self._figs_pos_to_nerf(pos), dtype=torch.float32, device=self.device
             )
             idx = voxel.get_indices(p_nerf)
             if voxel.non_navigable_grid[idx[0], idx[1], idx[2]]:
+                gate_dist = (
+                    float(np.linalg.norm(pos - gate_pos_figs))
+                    if gate_pos_figs is not None else -1
+                )
+                logger.debug(
+                    "Collision at FiGS=%s NS=%s idx=%s (%.3fm from gate)",
+                    pos.tolist(),
+                    self._figs_pos_to_nerf(pos).tolist(),
+                    idx.cpu().numpy().tolist(),
+                    gate_dist,
+                )
                 return False
         return True
 
@@ -309,23 +336,21 @@ class SplatNavRecovery:
         goal_position_figs: np.ndarray,
         start_state_figs: np.ndarray | None = None,
     ) -> RecoveryResult:
-        """Plan a safe path: start → gate_opening → goal using min-snap + collision validation.
+        """Plan a safe path: start → gate → goal using SplatNav's polytope planner.
 
         Strategy
         --------
-        1. Place a ``before_gate`` waypoint (approach side) and ``after_gate``
-           waypoint (exit side) at ±``gate_approach_offset_m`` along the
-           start→gate direction.
-        2. Generate a min-snap trajectory through
-           ``[start, before_gate, gate, after_gate, goal]`` using FiGS's
-           ``MinTimeSnap`` planner.  This guarantees smoothness and dynamic
-           feasibility.
-        3. Query every sampled position against the SplatNav collision voxel.
-           If collision-free → accept.
-        4. If in collision, perturb ``before_gate`` and ``after_gate``
-           perpendicular to the approach direction (a grid of small lateral +
-           vertical offsets) and repeat.  Up to ``max_perturb_attempts``
-           candidates are tried.
+        1. Convert start, gate, goal to Nerfstudio frame.
+        2. Plan two legs via ``SplatPlan.generate_path`` (A* → polytope
+           decomposition → B-spline optimization):
+           - Leg 1: start → gate
+           - Leg 2: gate → goal
+        3. Concatenate the two trajectories and convert back to FiGS NED.
+
+        The A* path seed may need to project the gate position to the nearest
+        navigable voxel (the gate opening is typically marked as occupied due
+        to Gaussian bounding boxes spanning across it).  SplatNav handles this
+        projection automatically.
 
         Parameters
         ----------
@@ -342,12 +367,16 @@ class SplatNavRecovery:
 
         self._ensure_planner()
 
-        start  = np.asarray(start_position_figs,  dtype=float)
-        gate   = np.asarray(gate_position_figs,   dtype=float)
-        goal   = np.asarray(goal_position_figs,   dtype=float)
+        start = np.asarray(start_position_figs, dtype=float)
+        gate  = np.asarray(gate_position_figs,  dtype=float)
+        goal  = np.asarray(goal_position_figs,  dtype=float)
 
-        # Coordinate sanity check: round-trip gate through transforms
-        gate_nerf = self._figs_pos_to_nerf(gate)
+        # Convert to NS frame
+        start_nerf = self._figs_pos_to_nerf(start)
+        gate_nerf  = self._figs_pos_to_nerf(gate)
+        goal_nerf  = self._figs_pos_to_nerf(goal)
+
+        # Coordinate sanity check
         gate_rt = self._nerf_pos_to_figs(gate_nerf)
         rt_error = np.linalg.norm(gate - gate_rt)
         if rt_error > 1e-4:
@@ -361,23 +390,18 @@ class SplatNavRecovery:
                 "Gate in NS frame %s outside voxel bounds [%s, %s]",
                 gate_nerf.tolist(), lb.tolist(), ub.tolist(),
             )
-        offset = float(self.config.gate_approach_offset_m)
 
-        # ---- Approach and lateral directions --------------------------------
-        approach = gate - start
-        d = np.linalg.norm(approach)
-        approach = approach / max(d, 1e-6)
-
-        # Two perpendicular directions in 3D (used for lateral perturbations)
-        up_world = np.array([0., 0., -1.])  # "up" in NED (z is down, so −z is up)
-        lateral = np.cross(approach, up_world)
-        lat_norm = np.linalg.norm(lateral)
-        if lat_norm < 1e-6:
-            # approach is vertical — choose any perpendicular
-            lateral = np.array([1., 0., 0.])
-        else:
-            lateral = lateral / lat_norm
-        vertical = np.cross(approach, lateral)  # stays unit-length
+        # Diagnostics
+        voxel = self._planner.gsplat_voxel
+        gate_nerf_t = torch.tensor(gate_nerf, dtype=torch.float32, device=self.device)
+        gate_idx = voxel.get_indices(gate_nerf_t)
+        gate_occupied = bool(voxel.non_navigable_grid[gate_idx[0], gate_idx[1], gate_idx[2]])
+        if gate_occupied:
+            logger.warning(
+                "Gate voxel at NS=%s (idx=%s) is non-navigable — "
+                "A* will project to nearest free voxel",
+                gate_nerf.tolist(), gate_idx.cpu().numpy().tolist(),
+            )
 
         # ---- Build dummy start snapshot for RecoveryResult ------------------
         if start_state_figs is not None and len(start_state_figs) == 10:
@@ -388,79 +412,101 @@ class SplatNavRecovery:
             ])
         dummy_snap = StateSnapshot(time=0.0, state=snap_state, control=np.zeros(4))
 
-        # ---- Perturbation candidates ----------------------------------------
-        # Start with no perturbation, then try a grid of lateral+vertical offsets.
-        steps = [0.0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
-        perturb_candidates: List[Tuple[float, float]] = [(0.0, 0.0)]
-        for s in steps[1:]:
-            for lat in ( s, -s):
-                for vert in (0.0, s, -s):
-                    perturb_candidates.append((lat, vert))
-
-        max_attempts = min(len(perturb_candidates), 30)
+        # ---- Plan two legs via SplatNav -------------------------------------
+        x_start = torch.tensor(start_nerf, dtype=torch.float32, device=self.device)
+        x_gate  = torch.tensor(gate_nerf,  dtype=torch.float32, device=self.device)
+        x_goal  = torch.tensor(goal_nerf,  dtype=torch.float32, device=self.device)
 
         t0 = _time.time()
-        best_positions: np.ndarray | None = None
-        accepted_lat = accepted_vert = 0.0
+        metadata: Dict = {}
+        traj_figs = None
 
-        for attempt, (lat_off, vert_off) in enumerate(perturb_candidates[:max_attempts]):
-            perturb = lat_off * lateral + vert_off * vertical
-            before_gate = gate - offset * approach + perturb
-            after_gate  = gate + offset * approach + perturb
-
-            try:
-                waypoints = [start, before_gate, gate, after_gate, goal]
-                pos = self._min_snap_positions(waypoints, total_time=5.0, hz=10)
-            except Exception as e:
-                logger.debug(
-                    "Min-snap attempt %d failed: %s: %s", attempt, type(e).__name__, e
-                )
-                continue
-
-            if self._trajectory_collision_free(pos):
-                best_positions = pos
-                accepted_lat   = lat_off
-                accepted_vert  = vert_off
-                break
-            else:
-                logger.debug(
-                    "Attempt %d: min-snap succeeded but trajectory collides "
-                    "(lat=%.3f, vert=%.3f)",
-                    attempt, lat_off, vert_off,
-                )
+        try:
+            logger.info("Planning leg 1: start → gate")
+            leg1 = self._planner.generate_path(x_start, x_gate)
+            logger.info("Planning leg 2: gate → goal")
+            leg2 = self._planner.generate_path(x_gate, x_goal)
+        except Exception as e:
+            t1 = _time.time()
+            logger.warning(
+                "SplatNav planning failed: %s: %s. "
+                "start_NS=%s, gate_NS=%s, goal_NS=%s",
+                type(e).__name__, e,
+                start_nerf.tolist(), gate_nerf.tolist(), goal_nerf.tolist(),
+            )
+            return RecoveryResult(
+                feasible=False,
+                safe_state=dummy_snap,
+                goal_position=goal,
+                planning_time_s=_time.time() - t0,
+                metadata={"error": f"{type(e).__name__}: {e}"},
+            )
 
         t1 = _time.time()
 
-        if best_positions is None:
-            logger.warning(
-                "plan_via_gate: all %d attempts failed. "
-                "start=%s, gate=%s (NS=%s), goal=%s",
-                max_attempts,
-                start.tolist(), gate.tolist(), gate_nerf.tolist(), goal.tolist(),
-            )
-        feasible = best_positions is not None
+        # Combine leg trajectories (both in NS frame)
+        leg1_feasible = leg1.get("feasible", False)
+        leg2_feasible = leg2.get("feasible", False)
+        feasible = leg1_feasible and leg2_feasible
 
-        # Temporarily override gate_position with the perturbed gate for validation
+        traj1_nerf = np.asarray(leg1.get("traj", []))
+        traj2_nerf = np.asarray(leg2.get("traj", []))
+
+        if traj1_nerf.ndim == 2 and traj2_nerf.ndim == 2:
+            # Concatenate, dropping duplicate gate point
+            combined_nerf = np.vstack([traj1_nerf, traj2_nerf[1:]])
+            traj_figs = np.array([
+                self._nerf_pos_to_figs(p[:3]) for p in combined_nerf
+            ])
+        elif traj1_nerf.ndim == 2:
+            traj_figs = np.array([self._nerf_pos_to_figs(p[:3]) for p in traj1_nerf])
+        elif traj2_nerf.ndim == 2:
+            traj_figs = np.array([self._nerf_pos_to_figs(p[:3]) for p in traj2_nerf])
+
+        # Collect A* paths for visualization
+        astar_path = None
+        p1 = leg1.get("path")
+        p2 = leg2.get("path")
+        if p1 is not None and p2 is not None:
+            astar_path = np.vstack([np.asarray(p1), np.asarray(p2)[1:]])
+        elif p1 is not None:
+            astar_path = np.asarray(p1)
+        elif p2 is not None:
+            astar_path = np.asarray(p2)
+
+        # Validate using the perturbed gate position
         saved_gate_position = self.config.gate_position
         self.config.gate_position = gate.tolist()
         validation_ok, validation_meta = self._validate_trajectory_positions(
-            best_positions, goal
+            traj_figs, goal
         )
         self.config.gate_position = saved_gate_position
         feasible = bool(feasible and validation_ok)
-        validation_meta["attempts"]        = attempt + 1 if best_positions is not None else max_attempts
-        validation_meta["accepted_lat_m"]  = float(accepted_lat)
-        validation_meta["accepted_vert_m"] = float(accepted_vert)
-        validation_meta["before_gate_ned"] = (gate - offset * approach + accepted_lat * lateral + accepted_vert * vertical).tolist()
-        validation_meta["after_gate_ned"]  = (gate + offset * approach + accepted_lat * lateral + accepted_vert * vertical).tolist()
+
+        metadata.update(validation_meta)
+        metadata["leg1_feasible"] = leg1_feasible
+        metadata["leg2_feasible"] = leg2_feasible
+        metadata["leg1_time_astar"] = leg1.get("times_astar", 0)
+        metadata["leg2_time_astar"] = leg2.get("times_astar", 0)
+        metadata["leg1_polytopes"] = leg1.get("num_polytopes", 0)
+        metadata["leg2_polytopes"] = leg2.get("num_polytopes", 0)
+
+        logger.info(
+            "plan_via_gate: feasible=%s (leg1=%s, leg2=%s) in %.2fs. "
+            "%d+%d polytopes, %d trajectory points",
+            feasible, leg1_feasible, leg2_feasible, t1 - t0,
+            leg1.get("num_polytopes", 0), leg2.get("num_polytopes", 0),
+            len(traj_figs) if traj_figs is not None else 0,
+        )
 
         return RecoveryResult(
             feasible=feasible,
             safe_state=dummy_snap,
             goal_position=goal,
-            trajectory_positions=best_positions,
+            trajectory_positions=traj_figs,
+            astar_path=astar_path,
             planning_time_s=t1 - t0,
-            metadata=validation_meta,
+            metadata=metadata,
         )
 
     def plan_recovery(

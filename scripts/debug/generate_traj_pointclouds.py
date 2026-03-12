@@ -114,9 +114,7 @@ def main():
     print(f"Scene points: {len(scene_means_ns)}")
 
     # --- Convert scene means from nerfstudio back to MOCAP ---
-    # Tw2g = Tdp_scaled @ axis_flip
-    # p_ns = Tw2g @ p_colmap_h => p_colmap = axis_flip_inv @ Tdp_scaled_inv @ p_ns
-    # But it's easier to go: p_ns -> COLMAP -> MOCAP
+    # NS -> undo dp -> undo axis_flip -> COLMAP -> Sim(3) -> Sim3-MOCAP
     Tdp_4x4 = np.eye(4)
     Tdp_4x4[:3, :] = dp_transform
     Tdp_scaled_4x4 = np.diag([dp_scale, dp_scale, dp_scale, 1.0]) @ Tdp_4x4
@@ -125,11 +123,7 @@ def main():
     Tg2w = np.linalg.inv(Tw2g)  # nerfstudio -> COLMAP
 
     scene_means_colmap = (Tg2w[:3, :3] @ scene_means_ns.T + Tg2w[:3, 3:4]).T
-    scene_means_mocap = np.array([
-        transformer.colmap_to_mocap_pose(np.eye(4))[:3, 3]  # just for the formula
-        for _ in [0]  # placeholder
-    ])
-    # Actually convert each point: p_mocap = s * R @ p_colmap + t
+    # Convert each point: p_mocap = s * R @ p_colmap + t
     scene_means_mocap = (transformer.s * (transformer.R @ scene_means_colmap.T) + transformer.t[:, None]).T
 
     # --- Convert trajectory to nerfstudio ---
@@ -137,9 +131,6 @@ def main():
     traj_colmap = np.array([transformer.mocap_to_colmap_position(p) for p in positions_mocap])
     traj_flipped = (axis_flip @ traj_colmap.T).T
     traj_ns = (dp_scale * (dp_transform[:, :3] @ traj_flipped.T + dp_transform[:, 3:4])).T
-
-    # Also compute WITHOUT axis flip (the old buggy way) for comparison
-    traj_ns_no_flip = (dp_scale * (dp_transform[:, :3] @ traj_colmap.T + dp_transform[:, 3:4])).T
 
     print(f"\nTrajectory start (NED):    {positions_ned[0]}")
     print(f"Trajectory start (MOCAP):  {positions_mocap[0]}")

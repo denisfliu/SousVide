@@ -73,6 +73,7 @@ class FalsificationEpisode:
     failure_record: Optional[FailureRecord] = None
     recovery_result: Optional[RecoveryResult] = None
     recovery_figs_data: Optional[Dict] = None       # FiGS rollout of recovery traj
+    waypoint_log: List[dict] = field(default_factory=list)  # per-step VLA waypoints
     perturbation_config: Optional[Dict] = None
     wall_time_s: float = 0.0
     metadata: Dict = field(default_factory=dict)
@@ -202,7 +203,7 @@ class FalsificationOrchestrator:
         detector = FailureDetector(criteria=criteria, safe_horizon=cfg.safe_horizon)
 
         # --- Run VLA in FiGS --------------------------------------------------
-        trajectory, failure_record_inner = self._run_vla_loop(detector)
+        trajectory, failure_record_inner, waypoint_log = self._run_vla_loop(detector)
 
         # --- Analyse result ----------------------------------------------------
         failure_record = failure_record_inner
@@ -283,6 +284,7 @@ class FalsificationOrchestrator:
             failure_record=failure_record,
             recovery_result=recovery_result,
             recovery_figs_data=recovery_figs,
+            waypoint_log=waypoint_log,
             perturbation_config=None,
             wall_time_s=time.time() - t_wall_start,
         )
@@ -330,7 +332,7 @@ class FalsificationOrchestrator:
 
     def _run_vla_loop(
         self, detector: FailureDetector
-    ) -> Tuple[List[StateSnapshot], Optional[FailureRecord]]:
+    ) -> Tuple[List[StateSnapshot], Optional[FailureRecord], List[dict]]:
         """Run the VLA in FiGS with dual cameras, perturbations, and live
         failure detection.
 
@@ -373,6 +375,7 @@ class FalsificationOrchestrator:
         ucr = np.array([-(m * g) / (Nrtr * kt), 0.0, 0.0, 0.0])
 
         trajectory: List[StateSnapshot] = []
+        waypoint_log: List[dict] = []  # per-step waypoint data for debugging
         failure_record: Optional[FailureRecord] = None
         tau_cr = np.zeros(3)
 
@@ -426,6 +429,15 @@ class FalsificationOrchestrator:
                     rgb=rgb_fwd, dpt=dpt_fwd, fcr=fts,
                 )
 
+                # Log waypoints for debugging
+                waypoint_log.append({
+                    "step": k,
+                    "action_index": ai,
+                    "position_ned": xcr[:3].copy(),
+                    "waypoints_ned": tsol["waypoints_ned"].copy(),
+                    "raw_vla_action": tsol["raw_vla_action"].copy(),
+                })
+
                 # Action perturbation
                 ucr = ucr_raw
                 if len(self.perturbations.action) > 0:
@@ -466,7 +478,7 @@ class FalsificationOrchestrator:
             k, n_queries, len(trajectory),
         )
 
-        return trajectory, failure_record
+        return trajectory, failure_record, waypoint_log
 
     # ------------------------------------------------------------------
     # Environment perturbation helpers

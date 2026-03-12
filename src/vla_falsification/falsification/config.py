@@ -34,10 +34,10 @@ GATE_PRESETS: Dict[str, Dict] = {
         "gsplat_name": "data/colmap/left_gate/sagesplat/2025-10-06_215922",
         "config_yml": _REPO_ROOT / "data" / "colmap" / "left_gate" / "sagesplat" / "2025-10-06_215922" / "config.yml",
         "scene_key": "left_gate",
-        "permutation": 5,
-        "start_position_zup": [0.104, -0.0219, 1.364],
-        "goal_position_zup": [1.421417, -0.3320115, 1.0],
-        "gate_position_zup": [0.936, 0.015, 1.134],
+        "permutation": 0,
+        "start_position_zup": [0.104, 0.0219, 1.364],
+        "goal_position_zup": [1.421417, 0.3320115, 1.0],
+        "gate_position_zup": [0.801, 0.266, 2.05],
         "gate_opening_half_w": 0.25,
         "gate_opening_half_h": 0.25,
         "gate_post_radius": 0.04,
@@ -50,10 +50,10 @@ GATE_PRESETS: Dict[str, Dict] = {
         "gsplat_name": "data/colmap/right_gate/sagesplat/2025-10-01_103533",
         "config_yml": _REPO_ROOT / "data" / "colmap" / "right_gate" / "sagesplat" / "2025-10-01_103533" / "config.yml",
         "scene_key": "right_gate",
-        "permutation": 5,
-        "start_position_zup": [0.104, -0.0219, 1.364],
-        "goal_position_zup": [1.421417, -0.3320115, 1.0],
-        "gate_position_zup": [1.107, -0.343, 1.159],
+        "permutation": 0,
+        "start_position_zup": [0.104, 0.0219, 1.364],
+        "goal_position_zup": [1.421417, 0.3320115, 1.0],
+        "gate_position_zup": [1.107, 0.343, 1.159],
         "gate_opening_half_w": 0.25,
         "gate_opening_half_h": 0.25,
         "gate_post_radius": 0.04,
@@ -115,7 +115,7 @@ DEFAULT_CONFIG: Dict = {
         ],
         "observation_state": [],
         "observation_camera": [],
-        "environment_means": [],
+        "environment_means": None,
         "environment_scales": [],
         "environment_opacities": [],
     },
@@ -169,7 +169,7 @@ def apply_gate_preset(cfg: Dict, gate: str) -> Dict:
 
     if (
         gate in ("left_gate", "right_gate")
-        and not cfg["perturbations"].get("environment_means")
+        and cfg["perturbations"].get("environment_means") is None
         and gate_mask_path.exists()
         and gate_points_path.exists()
         and table_points_path.exists()

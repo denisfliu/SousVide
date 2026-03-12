@@ -450,6 +450,7 @@ class VLAPolicy(BaseController):
         tsol = {
             "raw_vla_action": vla_action.copy(),
             "next_waypoint_ned": waypoints[0].copy(),
+            "waypoints_ned": waypoints_arr.copy(),
             "n_lookahead": len(waypoints),
             "action_index": action_index,
             "chunk_size": len(actions),

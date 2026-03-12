@@ -220,7 +220,12 @@ def build_figs_to_nerf_transform(
 
     T = t_mocap_to_colmap @ t_figs_to_mocap
 
-    # COLMAP -> Nerfstudio-internal (dataparser_transforms.json)
+    # COLMAP -> OpenGL axis convention (nerfstudio flips y and z)
+    t_axis_flip = np.eye(4)
+    t_axis_flip[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    T = t_axis_flip @ T
+
+    # COLMAP (flipped) -> Nerfstudio-internal (dataparser_transforms.json)
     if config_yml_path is not None:
         dp_path = Path(config_yml_path).parent / "dataparser_transforms.json"
         if dp_path.exists():

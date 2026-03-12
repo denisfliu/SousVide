@@ -337,6 +337,30 @@ def main():
             positions_mocap=traj_pos_mocap,
         )
 
+        # --- VLA waypoints (for debugging) ---
+        if ep.waypoint_log:
+            wp_steps = np.array([w["step"] for w in ep.waypoint_log])
+            wp_positions_ned = np.array([w["position_ned"] for w in ep.waypoint_log])
+            wp_positions_mocap = np.array([
+                convert_from_ned_to_zup(w["position_ned"], perm) for w in ep.waypoint_log
+            ])
+            wp_raw_actions = np.array([w["raw_vla_action"] for w in ep.waypoint_log])
+            # Waypoints are variable-length per step; save as object array
+            wp_waypoints_ned = [w["waypoints_ned"] for w in ep.waypoint_log]
+            wp_waypoints_mocap = [
+                np.array([convert_from_ned_to_zup(p, perm) for p in w["waypoints_ned"]])
+                for w in ep.waypoint_log
+            ]
+            np.savez(
+                ep_dir / "waypoints.npz",
+                steps=wp_steps,
+                positions_ned=wp_positions_ned,
+                positions_mocap=wp_positions_mocap,
+                raw_actions=wp_raw_actions,
+                waypoints_ned=np.array(wp_waypoints_ned, dtype=object),
+                waypoints_mocap=np.array(wp_waypoints_mocap, dtype=object),
+            )
+
         # --- Recovery trajectory (if available) ---
         recovery_pos_mocap = None
         if ep.recovery_result is not None and ep.recovery_result.trajectory_positions is not None:

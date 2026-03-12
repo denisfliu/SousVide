@@ -267,21 +267,23 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             position=tuple(position),
         )
 
+    axis_flip = np.diag([1.0, -1.0, -1.0])
+
     def to_viewer(positions_mocap):
         """Convert MOCAP positions to nerfstudio viewer frame.
 
-        Chain: MOCAP -> COLMAP (Sim(3) inverse) -> axis flip -> dataparser -> nerfstudio.
-        GSplat Tw2g = Tdp_scaled @ axis_flip, so we must apply axis_flip first.
+        Chain: MOCAP -> COLMAP (Sim(3) inv) -> axis flip -> dataparser -> NS.
         """
-        axis_flip = np.diag([1.0, -1.0, -1.0])
         out = []
         for p in positions_mocap:
+            # MOCAP -> COLMAP
             if transformer:
                 p_colmap = transformer.mocap_to_colmap_position(p)
             else:
                 p_colmap = p
-            # COLMAP -> nerfstudio: axis flip then dataparser transform
+            # COLMAP -> OpenGL (axis flip y,z)
             p_flipped = axis_flip @ p_colmap
+            # Flipped COLMAP -> nerfstudio-internal (dataparser)
             if dataparser_transform is not None:
                 p_ns = dataparser_scale * (dataparser_transform[:, :3] @ p_flipped + dataparser_transform[:, 3])
             else:
@@ -354,12 +356,12 @@ def add_falsification_trajectories(viewer_state: ViewerState, trajectories: list
             [x - hl, y + hw, z_bot],
         ])
 
-        axis_flip = np.diag([1.0, -1.0, -1.0])
         corners_colmap = np.array([
             transformer.mocap_to_colmap_position(c) if transformer else c
             for c in corners_mocap
         ])
-        corners_flipped = np.array([axis_flip @ c for c in corners_colmap])
+        # COLMAP -> OpenGL (axis flip)
+        corners_flipped = (axis_flip @ corners_colmap.T).T
         if dataparser_transform is not None:
             corners_v = np.array([
                 dataparser_scale * (dataparser_transform[:, :3] @ c + dataparser_transform[:, 3])
